@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 記帳智慧儀表板</title>
+  <!-- 引入 Tailwind CSS 美化介面 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入 Chart.js 繪製圖表 -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 p-4 md:p-8">
+
+  <div class="max-w-6xl mx-auto space-y-6">
+    <!-- 頂部標題與重新整理 -->
+    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">個人財務收支儀表板</h1>
+        <p id="status-text" class="text-sm text-slate-500 mt-1">連線狀態：讀取中...</p>
+      </div>
+      <button onclick="fetchFinanceData()" class="self-start sm:self-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition duration-150 shadow-sm shadow-indigo-100">
+        重新整理
+      </button>
+    </header>
+
+    <!-- 摘要數據卡片 -->
+    <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <span class="text-sm font-medium text-slate-400">總累積開銷</span>
+        <div class="text-3xl font-extrabold text-slate-900 mt-2" id="total-amount">$ 0</div>
+      </div>
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <span class="text-sm font-medium text-slate-400">最新月份開銷</span>
+        <div class="text-3xl font-extrabold text-indigo-600 mt-2" id="latest-month-amount">$ 0</div>
+      </div>
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <span class="text-sm font-medium text-slate-400">總消費筆數</span>
+        <div class="text-3xl font-extrabold text-slate-900 mt-2" id="total-records">0 筆</div>
+      </div>
+    </section>
+
+    <!-- 視覺化圖表 -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <h2 class="text-lg font-bold text-slate-900 mb-4">月份總支出趨勢</h2>
+        <div class="relative h-64">
+          <canvas id="monthlyBarChart"></canvas>
+        </div>
+      </div>
+      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <h2 class="text-lg font-bold text-slate-900 mb-4">五大類別支出比例</h2>
+        <div class="relative h-64 flex justify-center">
+          <canvas id="categoryPieChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- 即時記帳明細表格 -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      <div class="p-6 border-b border-slate-100">
+        <h2 class="text-lg font-bold text-slate-900">最新消費明細 (前 10 筆)</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+              <th class="py-3 px-6">時間</th>
+              <th class="py-3 px-6">項目</th>
+              <th class="py-3 px-6">類別</th>
+              <th class="py-3 px-6 text-right">金額 (TWD)</th>
+            </tr>
+          </thead>
+          <tbody id="detail-table-body" class="text-sm divide-y divide-slate-100">
+            <tr>
+              <td colspan="4" class="py-8 text-center text-slate-400">尚未載入資料...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // ==========================================
+    // ⚙️ 請在此處替換你的 GAS Web App 部署資訊
+    // ==========================================
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwWTmYYpFKwTeKFXD-qRu-PEbVffM-D1iIRWg4bX-GZUdCC23eOv7umQCvl-LiBBqyi/exec";
+    const API_TOKEN = "1qaz@WSX"; // 步驟二設定的 API_SECRET_TOKEN
+
+    let barChartInstance = null;
+    let pieChartInstance = null;
+
+    async function fetchFinanceData() {
+      const statusText = document.getElementById("status-text");
+      statusText.innerText = "連線狀態：更新資料中...";
+
+      try {
+        const fullUrl = `${GAS_URL}?token=${encodeURIComponent(API_TOKEN)}`;
+        const response = await fetch(fullUrl);
+        
+        if (!response.ok) {
+          throw new Error(`連線失敗 HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.status !== "success") {
+          throw new Error("API 回傳失敗");
+        }
+
+        statusText.innerText = `最後更新：${new Date().toLocaleTimeString('zh-TW')}`;
+        renderDashboard(data);
+
+      } catch (err) {
+        console.error(err);
+        statusText.innerText = `連線異常：${err.message}`;
+      }
+    }
+
+    function renderDashboard(apiData) {
+      // 1. 處理 details (明細資料)
+      // details 格式預期：[["時間", "項目", "類別", "金額", "月份"], ["...", "...", ...], ...]
+      const rawDetails = apiData.details || [];
+      const rows = rawDetails.slice(1); // 剃除標題列
+
+      // 計算統計卡片
+      let grandTotal = 0;
+      const categoryMap = {};
+
+      rows.forEach(r => {
+        const amount = Number(r[3]) || 0;
+        const cat = r[2] || "未分類";
+        grandTotal += amount;
+        categoryMap[cat] = (categoryMap[cat] || 0) + amount;
+      });
+
+      document.getElementById("total-amount").innerText = `$ ${grandTotal.toLocaleString()}`;
+      document.getElementById("total-records").innerText = `${rows.length} 筆`;
+
+      // 渲染表格 (倒序顯示最新 10 筆)
+      const tableBody = document.getElementById("detail-table-body");
+      tableBody.innerHTML = "";
+      
+      const recentRows = [...rows].reverse().slice(0, 10);
+      if (recentRows.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-400">目前尚無消費明細</td></tr>`;
+      } else {
+        recentRows.forEach(r => {
+          let formattedDate = '-';
+if (r[0]) {
+  const d = new Date(r[0]);
+  if (!isNaN(d.getTime())) {
+    formattedDate = d.toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+  } else {
+    // 如果無法被 Date 解析，直接顯示試算表原本的文字格式
+    formattedDate = String(r[0]);
+  }
+}
+          const tr = document.createElement("tr");
+          tr.className = "hover:bg-slate-50/50 transition";
+          tr.innerHTML = `
+            <td class="py-3 px-6 text-slate-500 whitespace-nowrap">${formattedDate}</td>
+            <td class="py-3 px-6 font-medium text-slate-800">${r[1] || '-'}</td>
+            <td class="py-3 px-6">
+              <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-md bg-indigo-50 text-indigo-600">${r[2] || '-'}</span>
+            </td>
+            <td class="py-3 px-6 text-right font-bold text-slate-700">$ ${Number(r[3] || 0).toLocaleString()}</td>
+          `;
+          tableBody.appendChild(tr);
+        });
+      }
+
+      // 2. 處理 summary (月度統計)
+      // summary 格式預期：[["月份", "總支出"], ["2026-08", 12850], ...]
+      const rawSummary = apiData.summary || [];
+      const summaryRows = rawSummary.slice(1);
+
+      if (summaryRows.length > 0) {
+        document.getElementById("latest-month-amount").innerText = `$ ${Number(summaryRows[0][1] || 0).toLocaleString()}`;
+      }
+
+      // 渲染長條圖
+      renderBarChart(summaryRows);
+
+      // 渲染圓餅圖
+      renderPieChart(categoryMap);
+    }
+
+    function renderBarChart(summaryRows) {
+      // 轉為正序以顯示時間流向
+      const sortedSummary = [...summaryRows].reverse();
+      const labels = sortedSummary.map(r => r[0]);
+      const values = sortedSummary.map(r => Number(r[1]) || 0);
+
+      const ctx = document.getElementById('monthlyBarChart').getContext('2d');
+      if (barChartInstance) barChartInstance.destroy();
+
+      barChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '每月總開銷 (TWD)',
+            data: values,
+            backgroundColor: 'rgba(99, 102, 241, 0.8)',
+            borderRadius: 8
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    function renderPieChart(categoryMap) {
+      const labels = Object.keys(categoryMap);
+      const values = Object.values(categoryMap);
+
+      const ctx = document.getElementById('categoryPieChart').getContext('2d');
+      if (pieChartInstance) pieChartInstance.destroy();
+
+      pieChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: values,
+            backgroundColor: [
+              '#3b82f6', // 生存 (藍)
+              '#10b981', // 家用 (綠)
+              '#f59e0b', // 社交 (黃)
+              '#8b5cf6', // 娛樂 (紫)
+              '#64748b'  // 雜支 (灰)
+            ]
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' }
+          }
+        }
+      });
+    }
+
+    // 頁面載入完成後自動抓取資料
+    window.addEventListener('DOMContentLoaded', fetchFinanceData);
+  </script>
+</body>
+</html>
