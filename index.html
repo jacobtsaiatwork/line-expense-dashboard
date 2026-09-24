@@ -3,207 +3,552 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 記帳智慧儀表板</title>
-  <!-- 引入 Tailwind CSS 美化介面 -->
+  <title>記帳本 PRO - 個人財務智慧管理</title>
+  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 引入 Chart.js 繪製圖表 -->
+  <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #e2e8f0;
+      border-radius: 4px;
+    }
+  </style>
 </head>
-<body class="bg-slate-50 text-slate-800 p-4 md:p-8">
+<body class="bg-[#F8FAFC] text-slate-800 flex min-h-screen">
 
-  <div class="max-w-6xl mx-auto space-y-6">
-    <!-- 頂部標題與重新整理 -->
-    <header class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-      <div>
-        <h1 class="text-2xl font-bold text-slate-900 tracking-tight">個人財務收支儀表板</h1>
-        <p id="status-text" class="text-sm text-slate-500 mt-1">連線狀態：讀取中...</p>
+  <!-- 1. 左側導覽側邊欄 (Sidebar) -->
+  <aside class="w-64 bg-[#111315] text-slate-300 flex flex-col justify-between flex-shrink-0 min-h-screen">
+    <div>
+      <!-- 品牌 Logo -->
+      <div class="p-6 flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-400 flex items-center justify-center font-bold text-xl border border-amber-400/30">
+          記
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-bold text-white text-base tracking-wide">記帳本</span>
+            <span class="text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30">PRO</span>
+          </div>
+          <p class="text-xs text-slate-500">個人財務智慧管理</p>
+        </div>
       </div>
-      <button onclick="fetchFinanceData()" class="self-start sm:self-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition duration-150 shadow-sm shadow-indigo-100">
-        重新整理
-      </button>
+
+      <!-- 選單區塊 -->
+      <div class="px-4 py-2">
+        <p class="text-[11px] font-semibold tracking-wider text-slate-500 uppercase px-3 mb-2">分析與報表</p>
+        <nav class="space-y-1">
+          <button id="nav-dashboard" onclick="switchTab('dashboard')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors bg-amber-500/10 text-amber-400">
+            <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+            總覽儀表板
+          </button>
+          <button id="nav-analysis" onclick="switchTab('analysis')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200">
+            <i data-lucide="calendar" class="w-4 h-4"></i>
+            每月花費分析
+          </button>
+        </nav>
+
+        <p class="text-[11px] font-semibold tracking-wider text-slate-500 uppercase px-3 mt-6 mb-2">系統與設定</p>
+        <nav class="space-y-1">
+          <button onclick="openApiModal()" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200">
+            <i data-lucide="cloud-cog" class="w-4 h-4"></i>
+            雲端連線設定
+          </button>
+        </nav>
+      </div>
+    </div>
+
+    <!-- 底部狀態 -->
+    <div class="p-4 border-t border-slate-800/80 m-4 rounded-xl bg-slate-900/50">
+      <div class="flex items-center gap-2 text-xs text-emerald-400 mb-1">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="conn-status">API 連線正常</span>
+      </div>
+      <p class="text-[11px] text-slate-500">雲端試算表即時連動中</p>
+    </div>
+  </aside>
+
+  <!-- 2. 主要工作區 (Main Content) -->
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+    <!-- 頂部列 (Header) -->
+    <header class="bg-white border-b border-slate-200/80 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
+      <div>
+        <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+          早安，理財達人 👋
+        </h1>
+        <p class="text-xs text-slate-500 mt-0.5">今天是管理財務的好日子 · 清楚掌握收支動向</p>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <!-- 月份切換下拉選單 -->
+        <select id="month-selector" onchange="changeMonth(this.value)" class="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500">
+          <!-- 動態載入 -->
+        </select>
+        <!-- 重新整理按鈕 -->
+        <button onclick="fetchData()" class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+          同步
+        </button>
+      </div>
     </header>
 
-    <!-- 摘要數據卡片 -->
-    <section class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <span class="text-sm font-medium text-slate-400">總累積開銷</span>
-        <div class="text-3xl font-extrabold text-slate-900 mt-2" id="total-amount">$ 0</div>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <span class="text-sm font-medium text-slate-400">最新月份開銷</span>
-        <div class="text-3xl font-extrabold text-indigo-600 mt-2" id="latest-month-amount">$ 0</div>
-      </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <span class="text-sm font-medium text-slate-400">總消費筆數</span>
-        <div class="text-3xl font-extrabold text-slate-900 mt-2" id="total-records">0 筆</div>
-      </div>
-    </section>
+    <div class="p-8 space-y-6">
 
-    <!-- 視覺化圖表 -->
-    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <h2 class="text-lg font-bold text-slate-900 mb-4">月份總支出趨勢</h2>
-        <div class="relative h-64">
-          <canvas id="monthlyBarChart"></canvas>
+      <!-- ================= 視圖 A：總覽儀表板 (Dashboard) ================= -->
+      <div id="view-dashboard" class="space-y-6">
+        <!-- 指標卡片 (Top 4 Cards) -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <!-- 本月總支出 -->
+          <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            <span class="text-xs text-slate-400 font-medium">本月總支出</span>
+            <div class="flex items-baseline gap-1 mt-2">
+              <span class="text-xs text-slate-400 font-medium">NT$</span>
+              <span id="stat-total" class="text-2xl font-bold text-slate-900">0</span>
+            </div>
+            <div class="mt-3 flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 w-fit px-2 py-0.5 rounded-md">
+              <i data-lucide="trending-down" class="w-3.5 h-3.5"></i>
+              <span id="stat-vs-last">較上月優化</span>
+            </div>
+          </div>
+
+          <!-- 半年平均月支出 -->
+          <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-slate-400 font-medium">近半年平均支出</span>
+              <span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">基準水位</span>
+            </div>
+            <div class="flex items-baseline gap-1 mt-2">
+              <span class="text-xs text-slate-400 font-medium">NT$</span>
+              <span id="stat-avg" class="text-2xl font-bold text-slate-900">0</span>
+            </div>
+            <p id="stat-avg-diff" class="text-xs text-slate-400 mt-3">水位穩定</p>
+          </div>
+
+          <!-- 最高單筆花費 -->
+          <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-slate-400 font-medium">最高單筆花費</span>
+              <span id="stat-max-cat" class="text-[10px] bg-amber-50 text-amber-600 px-1.5 py-0.5 rounded">無</span>
+            </div>
+            <div class="flex items-baseline gap-1 mt-2">
+              <span class="text-xs text-slate-400 font-medium">NT$</span>
+              <span id="stat-max-amt" class="text-2xl font-bold text-slate-900">0</span>
+            </div>
+            <p id="stat-max-item" class="text-xs text-slate-400 mt-3 truncate">無紀錄</p>
+          </div>
+
+          <!-- 月度預算進度卡片 (綠色精緻背景) -->
+          <div class="bg-[#0A5C43] text-white p-5 rounded-2xl shadow-sm flex flex-col justify-between">
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-emerald-200">月度剩餘預算</span>
+              <i data-lucide="shield-check" class="w-4 h-4 text-emerald-300"></i>
+            </div>
+            <div>
+              <div class="flex items-baseline gap-1 mt-1">
+                <span class="text-xs text-emerald-200">NT$</span>
+                <span id="stat-remain-budget" class="text-2xl font-bold">--</span>
+              </div>
+              <p id="stat-budget-daily" class="text-xs text-emerald-200/80 mt-1">每日可用額度：計算中</p>
+            </div>
+            <div class="mt-3 flex justify-between items-center text-xs">
+              <span class="bg-emerald-800/60 px-2 py-0.5 rounded text-emerald-200 text-[11px]">支出掌控良好</span>
+              <button onclick="setBudgetPrompt()" class="underline hover:text-emerald-100 text-[11px]">設定預算</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 中層圖表 (月度趨勢 + 支出分類圓餅) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- 趨勢長條圖 (佔 2 欄) -->
+          <div class="bg-white p-6 rounded-2xl border border-slate-200/80 lg:col-span-2">
+            <div class="flex justify-between items-center mb-4">
+              <div>
+                <h3 class="text-sm font-bold text-slate-900">月度支出趨勢</h3>
+                <p class="text-xs text-slate-400">點選柱狀圖可切換查看該月份數據</p>
+              </div>
+              <span class="text-xs bg-emerald-50 text-emerald-700 font-semibold px-2 py-1 rounded">近 6 個月</span>
+            </div>
+            <div class="h-64">
+              <canvas id="trendChart"></canvas>
+            </div>
+          </div>
+
+          <!-- 六大分類甜甜圈圖 (佔 1 欄) -->
+          <div class="bg-white p-6 rounded-2xl border border-slate-200/80 flex flex-col justify-between">
+            <div class="flex justify-between items-center mb-2">
+              <h3 class="text-sm font-bold text-slate-900">支出分類</h3>
+              <span class="text-xs text-slate-400" id="pie-month-label">本月</span>
+            </div>
+            <div class="h-48 relative flex items-center justify-center">
+              <canvas id="pieChart"></canvas>
+            </div>
+            <!-- 分類數值快速條 -->
+            <div id="category-bars" class="space-y-2 mt-4 text-xs">
+              <!-- JS 動態產生六大分類佔比 -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 底層清單：近期交易明細 + 分類進度條 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- 交易明細 (佔 2 欄) -->
+          <div class="bg-white p-6 rounded-2xl border border-slate-200/80 lg:col-span-2">
+            <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
+              <h3 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+                近期交易明細
+                <span id="trans-count" class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-normal">0 筆</span>
+              </h3>
+              <!-- 篩選器 -->
+              <div class="flex gap-2">
+                <input type="text" id="search-input" onkeyup="filterTransactions()" placeholder="搜尋項目或金額..." class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500 w-36">
+                <select id="cat-filter" onchange="filterTransactions()" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none text-slate-600">
+                  <option value="ALL">全部類別</option>
+                  <option value="餐飲">餐飲</option>
+                  <option value="生活">生活</option>
+                  <option value="家用">家用</option>
+                  <option value="社交">社交</option>
+                  <option value="娛樂">娛樂</option>
+                  <option value="雜支">雜支</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 明細清單容器 -->
+            <div id="transaction-list" class="space-y-2 max-h-96 overflow-y-auto custom-scrollbar pr-1">
+              <!-- JS 動態填入交易項目 -->
+            </div>
+          </div>
+
+          <!-- 分類支出進度條 + 理財名言 (佔 1 欄) -->
+          <div class="space-y-6">
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/80">
+              <h3 class="text-sm font-bold text-slate-900 mb-4">各分類支出水位</h3>
+              <div id="category-progress-list" class="space-y-4">
+                <!-- JS 動態填入各分類進度 -->
+              </div>
+            </div>
+
+            <!-- 勵志卡片 (Dark quote) -->
+            <div class="bg-[#111315] text-slate-300 p-5 rounded-2xl border border-slate-800">
+              <div class="flex justify-between items-center text-xs text-slate-500 mb-2">
+                <span>理財思維</span>
+                <i data-lucide="quote" class="w-3.5 h-3.5 text-slate-500"></i>
+              </div>
+              <p class="text-sm font-medium text-white">「財務自由不是擁有更多，而是懂得管理與選擇。」</p>
+              <div class="mt-3 text-[11px] text-emerald-400 flex items-center gap-1">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                <span>保持記帳習慣，掌控每筆現金流</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <h2 class="text-lg font-bold text-slate-900 mb-4">五大類別支出比例</h2>
-        <div class="relative h-64 flex justify-center">
-          <canvas id="categoryPieChart"></canvas>
+
+      <!-- ================= 視圖 B：每月花費分析 (Analysis) ================= -->
+      <div id="view-analysis" class="hidden space-y-6">
+        <!-- 堆疊圖表 -->
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/80">
+          <div class="flex justify-between items-center mb-4">
+            <div>
+              <h3 class="text-sm font-bold text-slate-900">每月花費類別分佈 (堆疊長條圖)</h3>
+              <p class="text-xs text-slate-400">分析每月各項開銷的組成比例</p>
+            </div>
+          </div>
+          <div class="h-80">
+            <canvas id="stackedChart"></canvas>
+          </div>
+        </div>
+
+        <!-- 歷史月份清單卡片 Grid -->
+        <div class="bg-white p-6 rounded-2xl border border-slate-200/80">
+          <h3 class="text-sm font-bold text-slate-900 mb-4">各月份詳細摘要</h3>
+          <div id="month-cards-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- JS 動態生成每月小卡 -->
+          </div>
         </div>
       </div>
-    </section>
 
-    <!-- 即時記帳明細表格 -->
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-      <div class="p-6 border-b border-slate-100">
-        <h2 class="text-lg font-bold text-slate-900">最新消費明細 (前 10 筆)</h2>
+    </div>
+  </main>
+
+  <!-- 雲端設定 Modal -->
+  <div id="api-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+      <h3 class="text-base font-bold text-slate-900">雲端連線設定</h3>
+      <div>
+        <label class="text-xs text-slate-500">Google Apps Script Web App URL</label>
+        <input type="text" id="setting-api-url" class="w-full text-xs border border-slate-200 rounded-lg p-2.5 mt-1 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="https://script.google.com/macros/s/.../exec">
       </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-              <th class="py-3 px-6">時間</th>
-              <th class="py-3 px-6">項目</th>
-              <th class="py-3 px-6">類別</th>
-              <th class="py-3 px-6 text-right">金額 (TWD)</th>
-            </tr>
-          </thead>
-          <tbody id="detail-table-body" class="text-sm divide-y divide-slate-100">
-            <tr>
-              <td colspan="4" class="py-8 text-center text-slate-400">尚未載入資料...</td>
-            </tr>
-          </tbody>
-        </table>
+      <div>
+        <label class="text-xs text-slate-500">API_SECRET_TOKEN (鑑權代碼)</label>
+        <input type="password" id="setting-api-token" class="w-full text-xs border border-slate-200 rounded-lg p-2.5 mt-1 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="輸入當初設定在 GAS 的安全 Token">
       </div>
-    </section>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeApiModal()" class="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+        <button onclick="saveApiSettings()" class="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">儲存並重新整理</button>
+      </div>
+    </div>
   </div>
 
   <script>
-    // ==========================================
-    // ⚙️ 請在此處替換你的 GAS Web App 部署資訊
-    // ==========================================
-    const GAS_URL = "https://script.google.com/macros/s/AKfycbwWTmYYpFKwTeKFXD-qRu-PEbVffM-D1iIRWg4bX-GZUdCC23eOv7umQCvl-LiBBqyi/exec";
-    const API_TOKEN = "1qaz@WSX"; // 步驟二設定的 API_SECRET_TOKEN
+    // 1. 六大分類專用顏色配對表
+    const CATEGORY_COLORS = {
+      "餐飲": "#F59E0B", // 琥珀橙
+      "生活": "#10B981", // 翡翠綠
+      "家用": "#3B82F6", // 經典藍
+      "社交": "#EC4899", // 玫瑰粉
+      "娛樂": "#8B5CF6", // 典雅紫
+      "雜支": "#64748B"  // 質感灰
+    };
 
-    let barChartInstance = null;
+    let globalTransactions = [];
+    let currentSelectedMonth = "";
+    let trendChartInstance = null;
     let pieChartInstance = null;
+    let stackedChartInstance = null;
 
-    async function fetchFinanceData() {
-      const statusText = document.getElementById("status-text");
-      statusText.innerText = "連線狀態：更新資料中...";
+    // 2. 初始化與快取讀取
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initSettings();
+      fetchData();
+    });
 
+    function initSettings() {
+      const savedUrl = localStorage.getItem("EXPENSE_API_URL");
+      const savedToken = localStorage.getItem("EXPENSE_API_TOKEN");
+      if (savedUrl) document.getElementById("setting-api-url").value = savedUrl;
+      if (savedToken) document.getElementById("setting-api-token").value = savedToken;
+    }
+
+    function openApiModal() { document.getElementById("api-modal").classList.remove("hidden"); }
+    function closeApiModal() { document.getElementById("api-modal").classList.add("hidden"); }
+    function saveApiSettings() {
+      const url = document.getElementById("setting-api-url").value.trim();
+      const token = document.getElementById("setting-api-token").value.trim();
+      localStorage.setItem("EXPENSE_API_URL", url);
+      localStorage.setItem("EXPENSE_API_TOKEN", token);
+      closeApiModal();
+      fetchData();
+    }
+
+    function setBudgetPrompt() {
+      const current = localStorage.getItem("USER_MONTHLY_BUDGET") || "15000";
+      const val = prompt("請輸入每月預算上限 (NT$):", current);
+      if (val && !isNaN(val)) {
+        localStorage.setItem("USER_MONTHLY_BUDGET", val);
+        renderStats();
+      }
+    }
+
+    // 3. 資料獲取核心
+    async function fetchData() {
+      const apiUrl = localStorage.getItem("EXPENSE_API_URL");
+      const apiToken = localStorage.getItem("EXPENSE_API_TOKEN");
+
+      if (!apiUrl || !apiToken) {
+        document.getElementById("conn-status").textContent = "請點擊設定配置 API";
+        document.getElementById("conn-status").classList.replace("text-emerald-400", "text-amber-400");
+        openApiModal();
+        return;
+      }
+
+      document.getElementById("conn-status").textContent = "同步中...";
       try {
-        const fullUrl = `${GAS_URL}?token=${encodeURIComponent(API_TOKEN)}`;
-        const response = await fetch(fullUrl);
-        
-        if (!response.ok) {
-          throw new Error(`連線失敗 HTTP ${response.status}`);
-        }
+        const res = await fetch(`${apiUrl}?token=${encodeURI(apiToken)}`);
+        const json = await res.json();
 
-        const data = await response.json();
-        
-        if (data.status !== "success") {
-          throw new Error("API 回傳失敗");
-        }
+        // 相容不同格式回傳
+        const list = json.transactions || json.data || (Array.isArray(json) ? json : []);
+        globalTransactions = list.map(item => {
+          // 日期容錯處理
+          let dStr = item.date || item.Date || "";
+          if (dStr.includes("T")) dStr = dStr.split("T")[0];
+          return {
+            date: dStr,
+            item: item.item || item.Item || "未命名",
+            category: item.category || item.Category || "雜支",
+            amount: Number(item.amount || item.Amount || 0)
+          };
+        }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        statusText.innerText = `最後更新：${new Date().toLocaleTimeString('zh-TW')}`;
-        renderDashboard(data);
+        document.getElementById("conn-status").textContent = "API 連線正常";
+        document.getElementById("conn-status").classList.replace("text-amber-400", "text-emerald-400");
 
+        populateMonthSelector();
+        updateAllViews();
       } catch (err) {
         console.error(err);
-        statusText.innerText = `連線異常：${err.message}`;
+        document.getElementById("conn-status").textContent = "API 連線異常";
+        document.getElementById("conn-status").classList.replace("text-emerald-400", "text-rose-400");
       }
     }
 
-    function renderDashboard(apiData) {
-      // 1. 處理 details (明細資料)
-      // details 格式預期：[["時間", "項目", "類別", "金額", "月份"], ["...", "...", ...], ...]
-      const rawDetails = apiData.details || [];
-      const rows = rawDetails.slice(1); // 剃除標題列
+    // 4. 月份下拉選單動態填充
+    function populateMonthSelector() {
+      const months = Array.from(new Set(globalTransactions.map(t => t.date.substring(0, 7)).filter(Boolean))).sort().reverse();
+      const selector = document.getElementById("month-selector");
+      selector.innerHTML = "";
+      if (months.length === 0) {
+        const now = new Date().toISOString().substring(0, 7);
+        months.push(now);
+      }
+      months.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = `${m.replace("-", " 年 ")} 月`;
+        selector.appendChild(opt);
+      });
+      if (!currentSelectedMonth || !months.includes(currentSelectedMonth)) {
+        currentSelectedMonth = months[0];
+      }
+      selector.value = currentSelectedMonth;
+    }
 
-      // 計算統計卡片
-      let grandTotal = 0;
-      const categoryMap = {};
+    function changeMonth(m) {
+      currentSelectedMonth = m;
+      updateAllViews();
+    }
 
-      rows.forEach(r => {
-        const amount = Number(r[3]) || 0;
-        const cat = r[2] || "未分類";
-        grandTotal += amount;
-        categoryMap[cat] = (categoryMap[cat] || 0) + amount;
+    // 5. 更新所有統計與圖表
+    function updateAllViews() {
+      renderStats();
+      renderCharts();
+      renderTransactions();
+      renderAnalysisView();
+      lucide.createIcons();
+    }
+
+    // 指標統計計算
+    function renderStats() {
+      const monthData = globalTransactions.filter(t => t.date.startsWith(currentSelectedMonth));
+      const total = monthData.reduce((sum, t) => sum + t.amount, 0);
+      document.getElementById("stat-total").textContent = total.toLocaleString();
+
+      // 最高單筆
+      if (monthData.length > 0) {
+        const max = [...monthData].sort((a, b) => b.amount - a.amount)[0];
+        document.getElementById("stat-max-amt").textContent = max.amount.toLocaleString();
+        document.getElementById("stat-max-item").textContent = `項目：${max.item}`;
+        document.getElementById("stat-max-cat").textContent = max.category;
+      } else {
+        document.getElementById("stat-max-amt").textContent = "0";
+        document.getElementById("stat-max-item").textContent = "本月無紀錄";
+        document.getElementById("stat-max-cat").textContent = "無";
+      }
+
+      // 半年均值計算
+      const allMonths = Array.from(new Set(globalTransactions.map(t => t.date.substring(0, 7)))).sort().slice(-6);
+      let sum6 = 0;
+      allMonths.forEach(m => {
+        sum6 += globalTransactions.filter(t => t.date.startsWith(m)).reduce((s, t) => s + t.amount, 0);
+      });
+      const avg = allMonths.length > 0 ? Math.round(sum6 / allMonths.length) : 0;
+      document.getElementById("stat-avg").textContent = avg.toLocaleString();
+
+      // 預算計算
+      const budget = Number(localStorage.getItem("USER_MONTHLY_BUDGET") || "15000");
+      const remain = budget - total;
+      document.getElementById("stat-remain-budget").textContent = remain.toLocaleString();
+      
+      const today = new Date();
+      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      const remainDays = Math.max(1, daysInMonth - today.getDate());
+      const daily = remain > 0 ? Math.round(remain / remainDays) : 0;
+      document.getElementById("stat-budget-daily").textContent = `剩餘天數：${remainDays} 天 · 日均可用 NT$ ${daily.toLocaleString()}`;
+    }
+
+    // 圖表渲染
+    function renderCharts() {
+      const monthData = globalTransactions.filter(t => t.date.startsWith(currentSelectedMonth));
+      document.getElementById("pie-month-label").textContent = `${currentSelectedMonth} 佔比`;
+
+      // 類別彙整
+      const catTotals = { "餐飲": 0, "生活": 0, "家用": 0, "社交": 0, "娛樂": 0, "雜支": 0 };
+      monthData.forEach(t => {
+        if (catTotals[t.category] !== undefined) catTotals[t.category] += t.amount;
+        else catTotals["雜支"] += t.amount;
       });
 
-      document.getElementById("total-amount").innerText = `$ ${grandTotal.toLocaleString()}`;
-      document.getElementById("total-records").innerText = `${rows.length} 筆`;
+      // 甜甜圈圖
+      const pieCtx = document.getElementById('pieChart').getContext('2d');
+      if (pieChartInstance) pieChartInstance.destroy();
+      pieChartInstance = new Chart(pieCtx, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(catTotals),
+          datasets: [{
+            data: Object.values(catTotals),
+            backgroundColor: Object.keys(catTotals).map(k => CATEGORY_COLORS[k]),
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          cutout: '75%'
+        }
+      });
 
-      // 渲染表格 (倒序顯示最新 10 筆)
-      const tableBody = document.getElementById("detail-table-body");
-      tableBody.innerHTML = "";
-      
-      const recentRows = [...rows].reverse().slice(0, 10);
-      if (recentRows.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="4" class="py-6 text-center text-slate-400">目前尚無消費明細</td></tr>`;
-      } else {
-        recentRows.forEach(r => {
-          let formattedDate = '-';
-if (r[0]) {
-  const d = new Date(r[0]);
-  if (!isNaN(d.getTime())) {
-    formattedDate = d.toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-  } else {
-    // 如果無法被 Date 解析，直接顯示試算表原本的文字格式
-    formattedDate = String(r[0]);
-  }
-}
-          const tr = document.createElement("tr");
-          tr.className = "hover:bg-slate-50/50 transition";
-          tr.innerHTML = `
-            <td class="py-3 px-6 text-slate-500 whitespace-nowrap">${formattedDate}</td>
-            <td class="py-3 px-6 font-medium text-slate-800">${r[1] || '-'}</td>
-            <td class="py-3 px-6">
-              <span class="inline-block px-2.5 py-1 text-xs font-semibold rounded-md bg-indigo-50 text-indigo-600">${r[2] || '-'}</span>
-            </td>
-            <td class="py-3 px-6 text-right font-bold text-slate-700">$ ${Number(r[3] || 0).toLocaleString()}</td>
-          `;
-          tableBody.appendChild(tr);
-        });
-      }
+      // 分類橫條進度
+      const catListEl = document.getElementById("category-bars");
+      const progressEl = document.getElementById("category-progress-list");
+      catListEl.innerHTML = "";
+      progressEl.innerHTML = "";
+      const totalMonth = Object.values(catTotals).reduce((a, b) => a + b, 0) || 1;
 
-      // 2. 處理 summary (月度統計)
-      // summary 格式預期：[["月份", "總支出"], ["2026-08", 12850], ...]
-      const rawSummary = apiData.summary || [];
-      const summaryRows = rawSummary.slice(1);
+      Object.entries(catTotals).forEach(([cat, val]) => {
+        const percent = Math.round((val / totalMonth) * 100);
+        const color = CATEGORY_COLORS[cat];
+        
+        // 甜甜圈下方的簡約數值條
+        catListEl.innerHTML += `
+          <div class="flex items-center justify-between text-xs">
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:${color}"></span>${cat}</span>
+            <span class="text-slate-500">${percent}% · NT$ ${val.toLocaleString()}</span>
+          </div>`;
 
-      if (summaryRows.length > 0) {
-        document.getElementById("latest-month-amount").innerText = `$ ${Number(summaryRows[0][1] || 0).toLocaleString()}`;
-      }
+        // 右下方的精緻進度條
+        progressEl.innerHTML += `
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="font-medium text-slate-700 flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full" style="background:${color}"></span>${cat}
+              </span>
+              <span class="text-slate-500 font-semibold">NT$ ${val.toLocaleString()} (${percent}%)</span>
+            </div>
+            <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+              <div class="h-1.5 rounded-full" style="width: ${percent}%; background: ${color}"></div>
+            </div>
+          </div>`;
+      });
 
-      // 渲染長條圖
-      renderBarChart(summaryRows);
+      // 趨勢長條圖 (近 6 個月)
+      const last6Months = Array.from(new Set(globalTransactions.map(t => t.date.substring(0, 7)))).sort().slice(-6);
+      const mTotals = last6Months.map(m => globalTransactions.filter(t => t.date.startsWith(m)).reduce((s, t) => s + t.amount, 0));
 
-      // 渲染圓餅圖
-      renderPieChart(categoryMap);
-    }
-
-    function renderBarChart(summaryRows) {
-      // 轉為正序以顯示時間流向
-      const sortedSummary = [...summaryRows].reverse();
-      const labels = sortedSummary.map(r => r[0]);
-      const values = sortedSummary.map(r => Number(r[1]) || 0);
-
-      const ctx = document.getElementById('monthlyBarChart').getContext('2d');
-      if (barChartInstance) barChartInstance.destroy();
-
-      barChartInstance = new Chart(ctx, {
+      const trendCtx = document.getElementById('trendChart').getContext('2d');
+      if (trendChartInstance) trendChartInstance.destroy();
+      trendChartInstance = new Chart(trendCtx, {
         type: 'bar',
         data: {
-          labels: labels,
+          labels: last6Months.map(m => m.split("-")[1] + "月"),
           datasets: [{
-            label: '每月總開銷 (TWD)',
-            data: values,
-            backgroundColor: 'rgba(99, 102, 241, 0.8)',
-            borderRadius: 8
+            label: '實質支出',
+            data: mTotals,
+            backgroundColor: '#0F766E', // 深綠色
+            borderRadius: 6
           }]
         },
         options: {
@@ -211,48 +556,115 @@ if (r[0]) {
           maintainAspectRatio: false,
           plugins: { legend: { display: false } },
           scales: {
-            y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
-            x: { grid: { display: false } }
+            y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 } } },
+            x: { grid: { display: false }, ticks: { font: { size: 10 } } }
           }
         }
       });
     }
 
-    function renderPieChart(categoryMap) {
-      const labels = Object.keys(categoryMap);
-      const values = Object.values(categoryMap);
+    // 渲染明細清單
+    function renderTransactions() {
+      filterTransactions();
+    }
 
-      const ctx = document.getElementById('categoryPieChart').getContext('2d');
-      if (pieChartInstance) pieChartInstance.destroy();
+    function filterTransactions() {
+      const keyword = document.getElementById("search-input").value.toLowerCase();
+      const cat = document.getElementById("cat-filter").value;
+      const monthData = globalTransactions.filter(t => t.date.startsWith(currentSelectedMonth));
 
-      pieChartInstance = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-          labels: labels,
-          datasets: [{
-            data: values,
-            backgroundColor: [
-              '#FF6384', // 餐飲
-              '#3b82f6', // 生存 (藍)
-              '#10b981', // 家用 (綠)
-              '#f59e0b', // 社交 (黃)
-              '#8b5cf6', // 娛樂 (紫)
-              '#64748b'  // 雜支 (灰)
-            ]
-          }]
-        },
+      const filtered = monthData.filter(t => {
+        const matchK = t.item.toLowerCase().includes(keyword) || String(t.amount).includes(keyword);
+        const matchC = (cat === "ALL") || (t.category === cat);
+        return matchK && matchC;
+      });
+
+      document.getElementById("trans-count").textContent = `${filtered.length} 筆`;
+      const container = document.getElementById("transaction-list");
+      container.innerHTML = "";
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="text-center py-8 text-xs text-slate-400">本月查無相符交易紀錄</div>`;
+        return;
+      }
+
+      filtered.forEach(t => {
+        const color = CATEGORY_COLORS[t.category] || "#64748B";
+        container.innerHTML += `
+          <div class="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs" style="background: ${color}20; color: ${color};">
+                ${t.category[0]}
+              </div>
+              <div>
+                <p class="text-xs font-semibold text-slate-800">${t.item}</p>
+                <p class="text-[10px] text-slate-400">${t.date}</p>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-xs font-bold text-slate-900">-NT$ ${t.amount.toLocaleString()}</span>
+              <span class="block text-[10px] text-slate-400">${t.category}</span>
+            </div>
+          </div>`;
+      });
+    }
+
+    // 渲染分析分頁 (Stacked Bar)
+    function renderAnalysisView() {
+      const allMonths = Array.from(new Set(globalTransactions.map(t => t.date.substring(0, 7)))).sort().slice(-6);
+      const cats = ["餐飲", "生活", "家用", "社交", "娛樂", "雜支"];
+      
+      const datasets = cats.map(c => ({
+        label: c,
+        data: allMonths.map(m => globalTransactions.filter(t => t.date.startsWith(m) && t.category === c).reduce((s, t) => s + t.amount, 0)),
+        backgroundColor: CATEGORY_COLORS[c],
+        stack: 'combined'
+      }));
+
+      const ctx = document.getElementById('stackedChart').getContext('2d');
+      if (stackedChartInstance) stackedChartInstance.destroy();
+      stackedChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: allMonths, datasets: datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'bottom' }
+          scales: {
+            x: { stacked: true, grid: { display: false } },
+            y: { stacked: true, grid: { color: '#F1F5F9' } }
           }
         }
       });
+
+      // 每月小摘要卡片
+      const grid = document.getElementById("month-cards-grid");
+      grid.innerHTML = "";
+      allMonths.slice().reverse().forEach(m => {
+        const mData = globalTransactions.filter(t => t.date.startsWith(m));
+        const total = mData.reduce((s, t) => s + t.amount, 0);
+        grid.innerHTML += `
+          <div class="p-4 rounded-xl border border-slate-200/80 bg-slate-50/50">
+            <span class="text-xs text-slate-400">${m}</span>
+            <p class="text-lg font-bold text-slate-900 mt-1">NT$ ${total.toLocaleString()}</p>
+            <p class="text-[10px] text-slate-500 mt-2">共 ${mData.length} 筆記帳消費</p>
+          </div>`;
+      });
     }
 
-    // 頁面載入完成後自動抓取資料
-    window.addEventListener('DOMContentLoaded', fetchFinanceData);
+    // 分頁切換邏輯
+    function switchTab(tab) {
+      if (tab === 'dashboard') {
+        document.getElementById("view-dashboard").classList.remove("hidden");
+        document.getElementById("view-analysis").classList.add("hidden");
+        document.getElementById("nav-dashboard").className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors bg-amber-500/10 text-amber-400";
+        document.getElementById("nav-analysis").className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200";
+      } else {
+        document.getElementById("view-dashboard").classList.add("hidden");
+        document.getElementById("view-analysis").classList.remove("hidden");
+        document.getElementById("nav-analysis").className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors bg-amber-500/10 text-amber-400";
+        document.getElementById("nav-dashboard").className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200";
+      }
+    }
   </script>
 </body>
 </html>
