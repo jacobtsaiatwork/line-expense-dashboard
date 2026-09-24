@@ -317,7 +317,6 @@
     let pieChartInstance = null;
     let stackedChartInstance = null;
 
-    // 2. 初始化與快取讀取
     window.addEventListener('DOMContentLoaded', () => {
       lucide.createIcons();
       initSettings();
@@ -351,13 +350,13 @@
       }
     }
 
-    // 3. 資料獲取核心
+    // 2. 資料獲取核心（完美支援 GAS 矩陣二維陣列）
     async function fetchData() {
       const apiUrl = localStorage.getItem("EXPENSE_API_URL");
       const apiToken = localStorage.getItem("EXPENSE_API_TOKEN");
 
-      if (!apiUrl || !apiToken) {
-        document.getElementById("conn-status").textContent = "請點擊設定配置 API";
+      if (!apiUrl) {
+        document.getElementById("conn-status").textContent = "請設定 API 網址";
         document.getElementById("conn-status").classList.replace("text-emerald-400", "text-amber-400");
         openApiModal();
         return;
@@ -365,22 +364,51 @@
 
       document.getElementById("conn-status").textContent = "同步中...";
       try {
-        const res = await fetch(`${apiUrl}?token=${encodeURI(apiToken)}`);
+        const fullUrl = `${apiUrl}${apiUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(apiToken || '')}`;
+        const res = await fetch(fullUrl, { redirect: "follow" });
         const json = await res.json();
 
-        // 相容不同格式回傳
-        const list = json.transactions || json.data || (Array.isArray(json) ? json : []);
-        globalTransactions = list.map(item => {
-          // 日期容錯處理
-          let dStr = item.date || item.Date || "";
-          if (dStr.includes("T")) dStr = dStr.split("T")[0];
-          return {
-            date: dStr,
-            item: item.item || item.Item || "未命名",
-            category: item.category || item.Category || "雜支",
-            amount: Number(item.amount || item.Amount || 0)
-          };
-        }).sort((a, b) => new Date(b.date) - new Date(a.date));
+        // 處理 GAS 的 details 矩陣資料: [["時間", "項目", "分類", "金額", "月份"], [...], ...]
+        let rawRows = [];
+        if (json.details && Array.isArray(json.details)) {
+          rawRows = json.details.slice(1); // 扣除第一列標題
+        } else if (Array.isArray(json.data)) {
+          rawRows = json.data;
+        } else if (Array.isArray(json)) {
+          rawRows = json;
+        }
+
+        globalTransactions = rawRows.map(row => {
+          if (Array.isArray(row)) {
+            // [時間, 項目, 分類, 金額, 月份]
+            let dRaw = String(row[0] || '');
+            let monthRaw = String(row[4] || '');
+            let dateFormatted = dRaw;
+
+            // 若有標準月份 (例如 2026-09)
+            if (monthRaw && monthRaw.includes('-')) {
+              dateFormatted = dRaw.includes(' ') ? dRaw.split(' ')[0] : dRaw;
+            }
+
+            const cleanAmt = String(row[3] || '0').replace(/,/g, '');
+            return {
+              date: dateFormatted || monthRaw,
+              month: monthRaw || (dateFormatted.substring(0, 7)),
+              item: String(row[1] || '未命名'),
+              category: String(row[2] || '雜支').trim(),
+              amount: Math.abs(Number(cleanAmt)) || 0
+            };
+          } else {
+            // 物件型相容
+            return {
+              date: String(row.date || '').split('T')[0],
+              month: String(row.month || (row.date || '').substring(0, 7)),
+              item: String(row.item || '未命名'),
+              category: String(row.category || '雜支').trim(),
+              amount: Math.abs(Number(row.amount)) || 0
+            };
+          }
+        }).filter(t => t.item && t.amount > 0);
 
         document.getElementById("conn-status").textContent = "API 連線正常";
         document.getElementById("conn-status").classList.replace("text-amber-400", "text-emerald-400");
@@ -388,15 +416,15 @@
         populateMonthSelector();
         updateAllViews();
       } catch (err) {
-        console.error(err);
+        console.error("資料載入失敗:", err);
         document.getElementById("conn-status").textContent = "API 連線異常";
         document.getElementById("conn-status").classList.replace("text-emerald-400", "text-rose-400");
       }
     }
 
-    // 4. 月份下拉選單動態填充
+    // 3. 填充月份下拉選單
     function populateMonthSelector() {
-      const months = Array.from(new Set(globalTransactions.map(t => t.date.substring(0, 7)).filter(Boolean))).sort().reverse();
+      const months = Array.from(new Set(globalTransactions.map(t => t.month).filter(Boolean))).sort().reverse();
       const selector = document.getElementById("month-selector");
       selector.innerHTML = "";
       if (months.length === 0) {
@@ -420,7 +448,6 @@
       updateAllViews();
     }
 
-    // 5. 更新所有統計與圖表
     function updateAllViews() {
       renderStats();
       renderCharts();
@@ -429,13 +456,12 @@
       lucide.createIcons();
     }
 
-    // 指標統計計算
+    // 4. 指標統計
     function renderStats() {
-      const monthData = globalTransactions.filter(t => t.date.startsWith(currentSelectedMonth));
+      const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
       const total = monthData.reduce((sum, t) => sum + t.amount, 0);
       document.getElementById("stat-total").textContent = total.toLocaleString();
 
-      // 最高單筆
       if (monthData.length > 0) {
         const max = [...monthData].sort((a, b) => b.amount - a.amount)[0];
         document.getElementById("stat-max-amt").textContent = max.amount.toLocaleString();
@@ -447,16 +473,16 @@
         document.getElementById("stat-max-cat").textContent = "無";
       }
 
-      // 半年均值計算
-      const allMonths = Array.from(new Set(globalTransactions.map(t => t.date.substring(0, 7)))).sort().slice(-6);
+      // 半年均值
+      const allMonths = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
       let sum6 = 0;
       allMonths.forEach(m => {
-        sum6 += globalTransactions.filter(t => t.date.startsWith(m)).reduce((s, t) => s + t.amount, 0);
+        sum6 += globalTransactions.filter(t => t.month === m).reduce((s, t) => s + t.amount, 0);
       });
       const avg = allMonths.length > 0 ? Math.round(sum6 / allMonths.length) : 0;
       document.getElementById("stat-avg").textContent = avg.toLocaleString();
 
-      // 預算計算
+      // 預算
       const budget = Number(localStorage.getItem("USER_MONTHLY_BUDGET") || "15000");
       const remain = budget - total;
       document.getElementById("stat-remain-budget").textContent = remain.toLocaleString();
@@ -468,19 +494,18 @@
       document.getElementById("stat-budget-daily").textContent = `剩餘天數：${remainDays} 天 · 日均可用 NT$ ${daily.toLocaleString()}`;
     }
 
-    // 圖表渲染
+    // 5. 圖表渲染
     function renderCharts() {
-      const monthData = globalTransactions.filter(t => t.date.startsWith(currentSelectedMonth));
+      const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
       document.getElementById("pie-month-label").textContent = `${currentSelectedMonth} 佔比`;
 
-      // 類別彙整
       const catTotals = { "餐飲": 0, "生活": 0, "家用": 0, "社交": 0, "娛樂": 0, "雜支": 0 };
       monthData.forEach(t => {
         if (catTotals[t.category] !== undefined) catTotals[t.category] += t.amount;
         else catTotals["雜支"] += t.amount;
       });
 
-      // 甜甜圈圖
+      // 圓餅圖
       const pieCtx = document.getElementById('pieChart').getContext('2d');
       if (pieChartInstance) pieChartInstance.destroy();
       pieChartInstance = new Chart(pieCtx, {
@@ -501,7 +526,7 @@
         }
       });
 
-      // 分類橫條進度
+      // 分類條
       const catListEl = document.getElementById("category-bars");
       const progressEl = document.getElementById("category-progress-list");
       catListEl.innerHTML = "";
@@ -512,14 +537,12 @@
         const percent = Math.round((val / totalMonth) * 100);
         const color = CATEGORY_COLORS[cat];
         
-        // 甜甜圈下方的簡約數值條
         catListEl.innerHTML += `
           <div class="flex items-center justify-between text-xs">
             <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full" style="background:${color}"></span>${cat}</span>
             <span class="text-slate-500">${percent}% · NT$ ${val.toLocaleString()}</span>
           </div>`;
 
-        // 右下方的精緻進度條
         progressEl.innerHTML += `
           <div>
             <div class="flex justify-between text-xs mb-1">
@@ -534,9 +557,9 @@
           </div>`;
       });
 
-      // 趨勢長條圖 (近 6 個月)
-      const last6Months = Array.from(new Set(globalTransactions.map(t => t.date.substring(0, 7)))).sort().slice(-6);
-      const mTotals = last6Months.map(m => globalTransactions.filter(t => t.date.startsWith(m)).reduce((s, t) => s + t.amount, 0));
+      // 趨勢圖 (近 6 個月)
+      const last6Months = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
+      const mTotals = last6Months.map(m => globalTransactions.filter(t => t.month === m).reduce((s, t) => s + t.amount, 0));
 
       const trendCtx = document.getElementById('trendChart').getContext('2d');
       if (trendChartInstance) trendChartInstance.destroy();
@@ -547,7 +570,7 @@
           datasets: [{
             label: '實質支出',
             data: mTotals,
-            backgroundColor: '#0F766E', // 深綠色
+            backgroundColor: '#0F766E',
             borderRadius: 6
           }]
         },
@@ -563,7 +586,7 @@
       });
     }
 
-    // 渲染明細清單
+    // 6. 明細篩選
     function renderTransactions() {
       filterTransactions();
     }
@@ -571,7 +594,7 @@
     function filterTransactions() {
       const keyword = document.getElementById("search-input").value.toLowerCase();
       const cat = document.getElementById("cat-filter").value;
-      const monthData = globalTransactions.filter(t => t.date.startsWith(currentSelectedMonth));
+      const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
 
       const filtered = monthData.filter(t => {
         const matchK = t.item.toLowerCase().includes(keyword) || String(t.amount).includes(keyword);
@@ -609,14 +632,14 @@
       });
     }
 
-    // 渲染分析分頁 (Stacked Bar)
+    // 7. 分析分頁
     function renderAnalysisView() {
-      const allMonths = Array.from(new Set(globalTransactions.map(t => t.date.substring(0, 7)))).sort().slice(-6);
+      const allMonths = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
       const cats = ["餐飲", "生活", "家用", "社交", "娛樂", "雜支"];
       
       const datasets = cats.map(c => ({
         label: c,
-        data: allMonths.map(m => globalTransactions.filter(t => t.date.startsWith(m) && t.category === c).reduce((s, t) => s + t.amount, 0)),
+        data: allMonths.map(m => globalTransactions.filter(t => t.month === m && t.category === c).reduce((s, t) => s + t.amount, 0)),
         backgroundColor: CATEGORY_COLORS[c],
         stack: 'combined'
       }));
@@ -636,11 +659,10 @@
         }
       });
 
-      // 每月小摘要卡片
       const grid = document.getElementById("month-cards-grid");
       grid.innerHTML = "";
       allMonths.slice().reverse().forEach(m => {
-        const mData = globalTransactions.filter(t => t.date.startsWith(m));
+        const mData = globalTransactions.filter(t => t.month === m);
         const total = mData.reduce((s, t) => s + t.amount, 0);
         grid.innerHTML += `
           <div class="p-4 rounded-xl border border-slate-200/80 bg-slate-50/50">
@@ -651,7 +673,6 @@
       });
     }
 
-    // 分頁切換邏輯
     function switchTab(tab) {
       if (tab === 'dashboard') {
         document.getElementById("view-dashboard").classList.remove("hidden");
