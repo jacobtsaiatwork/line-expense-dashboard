@@ -23,58 +23,84 @@
       background: #e2e8f0;
       border-radius: 4px;
     }
+    /* 側邊欄縮小收合狀態 */
+    #sidebar.collapsed {
+      width: 5rem !important; /* 80px */
+    }
+    #sidebar.collapsed .sidebar-text,
+    #sidebar.collapsed .sidebar-header-text,
+    #sidebar.collapsed .sidebar-footer-text,
+    #sidebar.collapsed .sidebar-category-title {
+      display: none !important;
+    }
+    #sidebar.collapsed .nav-item {
+      justify-content: center !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+    }
+    #sidebar.collapsed .sidebar-footer {
+      padding: 0.75rem !important;
+      display: flex;
+      justify-content: center;
+    }
   </style>
 </head>
 <body class="bg-[#F8FAFC] text-slate-800 flex min-h-screen">
 
   <!-- 1. 左側導覽側邊欄 (Sidebar) -->
-  <aside class="w-64 bg-[#111315] text-slate-300 flex flex-col justify-between flex-shrink-0 min-h-screen">
+  <aside id="sidebar" class="w-64 bg-[#111315] text-slate-300 flex flex-col justify-between flex-shrink-0 min-h-screen transition-all duration-300 ease-in-out">
     <div>
-      <!-- 品牌 Logo -->
-      <div class="p-6 flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-400 flex items-center justify-center font-bold text-xl border border-amber-400/30">
-          記
-        </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="font-bold text-white text-base tracking-wide">記帳本</span>
-            <span class="text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30">PRO</span>
+      <!-- 品牌 Logo & 收合按鈕 -->
+      <div class="p-6 flex items-center justify-between">
+        <div class="flex items-center gap-3 overflow-hidden">
+          <div class="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-400 flex items-center justify-center font-bold text-xl border border-amber-400/30 flex-shrink-0">
+            記
           </div>
-          <p class="text-xs text-slate-500">個人財務智慧管理</p>
+          <div class="sidebar-header-text whitespace-nowrap">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-white text-base tracking-wide">記帳本</span>
+              <span class="text-[10px] bg-emerald-500/20 text-emerald-400 font-semibold px-1.5 py-0.5 rounded border border-emerald-500/30">PRO</span>
+            </div>
+            <p class="text-xs text-slate-500">個人財務智慧管理</p>
+          </div>
         </div>
+        <!-- 側邊欄切換按鈕 -->
+        <button onclick="toggleSidebar()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors" title="收合/展開選單">
+          <i id="sidebar-toggle-icon" data-lucide="panel-left-close" class="w-4 h-4"></i>
+        </button>
       </div>
 
       <!-- 選單區塊 -->
       <div class="px-4 py-2">
-        <p class="text-[11px] font-semibold tracking-wider text-slate-500 uppercase px-3 mb-2">分析與報表</p>
+        <p class="sidebar-category-title text-[11px] font-semibold tracking-wider text-slate-500 uppercase px-3 mb-2">分析與報表</p>
         <nav class="space-y-1">
-          <button id="nav-dashboard" onclick="switchTab('dashboard')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors bg-amber-500/10 text-amber-400">
-            <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
-            總覽儀表板
+          <button id="nav-dashboard" onclick="switchTab('dashboard')" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors bg-amber-500/10 text-amber-400" title="總覽儀表板">
+            <i data-lucide="layout-dashboard" class="w-4 h-4 flex-shrink-0"></i>
+            <span class="sidebar-text whitespace-nowrap">總覽儀表板</span>
           </button>
-          <button id="nav-analysis" onclick="switchTab('analysis')" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200">
-            <i data-lucide="calendar" class="w-4 h-4"></i>
-            每月花費分析
+          <button id="nav-analysis" onclick="switchTab('analysis')" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200" title="每月花費分析">
+            <i data-lucide="calendar" class="w-4 h-4 flex-shrink-0"></i>
+            <span class="sidebar-text whitespace-nowrap">每月花費分析</span>
           </button>
         </nav>
 
-        <p class="text-[11px] font-semibold tracking-wider text-slate-500 uppercase px-3 mt-6 mb-2">系統與設定</p>
+        <p class="sidebar-category-title text-[11px] font-semibold tracking-wider text-slate-500 uppercase px-3 mt-6 mb-2">系統與設定</p>
         <nav class="space-y-1">
-          <button onclick="openApiModal()" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200">
-            <i data-lucide="cloud-cog" class="w-4 h-4"></i>
-            雲端連線設定
+          <button onclick="openApiModal()" class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200" title="雲端連線設定">
+            <i data-lucide="cloud-cog" class="w-4 h-4 flex-shrink-0"></i>
+            <span class="sidebar-text whitespace-nowrap">雲端連線設定</span>
           </button>
         </nav>
       </div>
     </div>
 
     <!-- 底部狀態 -->
-    <div class="p-4 border-t border-slate-800/80 m-4 rounded-xl bg-slate-900/50">
+    <div class="sidebar-footer p-4 border-t border-slate-800/80 m-4 rounded-xl bg-slate-900/50">
       <div class="flex items-center gap-2 text-xs text-emerald-400 mb-1">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span id="conn-status">API 連線正常</span>
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
+        <span id="conn-status" class="sidebar-footer-text whitespace-nowrap">API 連線正常</span>
       </div>
-      <p class="text-[11px] text-slate-500">雲端試算表即時連動中</p>
+      <p class="sidebar-footer-text text-[11px] text-slate-500 whitespace-nowrap">雲端試算表即時連動中</p>
     </div>
   </aside>
 
@@ -82,11 +108,13 @@
   <main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
     <!-- 頂部列 (Header) -->
     <header class="bg-white border-b border-slate-200/80 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
-      <div>
-        <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2">
-          早安，窮逼 👋
-        </h1>
-        <p class="text-xs text-slate-500 mt-0.5">今天是管理財務的好日子 · 清楚掌握收支動向</p>
+      <div class="flex items-center gap-3">
+        <div>
+          <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+            早安，窮逼 👋
+          </h1>
+          <p class="text-xs text-slate-500 mt-0.5">今天是管理財務的好日子 · 清楚掌握收支動向</p>
+        </div>
       </div>
 
       <div class="flex items-center gap-3">
@@ -289,10 +317,6 @@
         <label class="text-xs text-slate-500">Google Apps Script Web App URL</label>
         <input type="text" id="setting-api-url" class="w-full text-xs border border-slate-200 rounded-lg p-2.5 mt-1 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="https://script.google.com/macros/s/.../exec">
       </div>
-      <div>
-        <label class="text-xs text-slate-500">API_SECRET_TOKEN (鑑權代碼)</label>
-        <input type="password" id="setting-api-token" class="w-full text-xs border border-slate-200 rounded-lg p-2.5 mt-1 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="輸入當初設定在 GAS 的安全 Token">
-      </div>
       <div class="flex justify-end gap-2 pt-2">
         <button onclick="closeApiModal()" class="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
         <button onclick="saveApiSettings()" class="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">儲存並重新整理</button>
@@ -301,6 +325,9 @@
   </div>
 
   <script>
+    // 預設後端配置（固定寫死，無須任何 Token 鑑權）
+    const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwWTmYYpFKwTeKFXD-qRu-PEbVffM-D1iIRWg4bX-GZUdCC23eOv7umQCvl-LiBBqyi/exec";
+
     // 1. 六大分類專用顏色配對表
     const CATEGORY_COLORS = {
       "餐飲": "#F59E0B", // 琥珀橙
@@ -320,23 +347,42 @@
     window.addEventListener('DOMContentLoaded', () => {
       lucide.createIcons();
       initSettings();
+      // 還原側邊欄收合偏好
+      if (localStorage.getItem("SIDEBAR_COLLAPSED") === "true") {
+        document.getElementById("sidebar").classList.add("collapsed");
+        updateSidebarToggleIcon(true);
+      }
       fetchData();
     });
 
+    // 側邊欄縮小/展開切換函式
+    function toggleSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      const isCollapsed = sidebar.classList.toggle("collapsed");
+      localStorage.setItem("SIDEBAR_COLLAPSED", isCollapsed ? "true" : "false");
+      updateSidebarToggleIcon(isCollapsed);
+    }
+
+    function updateSidebarToggleIcon(isCollapsed) {
+      const icon = document.getElementById("sidebar-toggle-icon");
+      if (isCollapsed) {
+        icon.setAttribute("data-lucide", "panel-left-open");
+      } else {
+        icon.setAttribute("data-lucide", "panel-left-close");
+      }
+      lucide.createIcons();
+    }
+
     function initSettings() {
-      const savedUrl = localStorage.getItem("EXPENSE_API_URL");
-      const savedToken = localStorage.getItem("EXPENSE_API_TOKEN");
+      const savedUrl = localStorage.getItem("EXPENSE_API_URL") || DEFAULT_API_URL;
       if (savedUrl) document.getElementById("setting-api-url").value = savedUrl;
-      if (savedToken) document.getElementById("setting-api-token").value = savedToken;
     }
 
     function openApiModal() { document.getElementById("api-modal").classList.remove("hidden"); }
     function closeApiModal() { document.getElementById("api-modal").classList.add("hidden"); }
     function saveApiSettings() {
       const url = document.getElementById("setting-api-url").value.trim();
-      const token = document.getElementById("setting-api-token").value.trim();
       localStorage.setItem("EXPENSE_API_URL", url);
-      localStorage.setItem("EXPENSE_API_TOKEN", token);
       closeApiModal();
       fetchData();
     }
@@ -350,22 +396,13 @@
       }
     }
 
-    // 2. 資料獲取核心（完美支援 GAS 矩陣二維陣列）
+    // 2. 資料獲取核心（免 Token 直接請求）
     async function fetchData() {
-      const apiUrl = localStorage.getItem("EXPENSE_API_URL");
-      const apiToken = localStorage.getItem("EXPENSE_API_TOKEN");
-
-      if (!apiUrl) {
-        document.getElementById("conn-status").textContent = "請設定 API 網址";
-        document.getElementById("conn-status").classList.replace("text-emerald-400", "text-amber-400");
-        openApiModal();
-        return;
-      }
+      const apiUrl = localStorage.getItem("EXPENSE_API_URL") || DEFAULT_API_URL;
 
       document.getElementById("conn-status").textContent = "同步中...";
       try {
-        const fullUrl = `${apiUrl}${apiUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(apiToken || '')}`;
-        const res = await fetch(fullUrl, { redirect: "follow" });
+        const res = await fetch(apiUrl, { redirect: "follow" });
         const json = await res.json();
 
         // 處理 GAS 的 details 矩陣資料: [["時間", "項目", "分類", "金額", "月份"], [...], ...]
@@ -385,7 +422,6 @@
             let monthRaw = String(row[4] || '');
             let dateFormatted = dRaw;
 
-            // 若有標準月份 (例如 2026-09)
             if (monthRaw && monthRaw.includes('-')) {
               dateFormatted = dRaw.includes(' ') ? dRaw.split(' ')[0] : dRaw;
             }
@@ -399,7 +435,6 @@
               amount: Math.abs(Number(cleanAmt)) || 0
             };
           } else {
-            // 物件型相容
             return {
               date: String(row.date || '').split('T')[0],
               month: String(row.month || (row.date || '').substring(0, 7)),
@@ -677,13 +712,13 @@
       if (tab === 'dashboard') {
         document.getElementById("view-dashboard").classList.remove("hidden");
         document.getElementById("view-analysis").classList.add("hidden");
-        document.getElementById("nav-dashboard").className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors bg-amber-500/10 text-amber-400";
-        document.getElementById("nav-analysis").className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200";
+        document.getElementById("nav-dashboard").className = "nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors bg-amber-500/10 text-amber-400";
+        document.getElementById("nav-analysis").className = "nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200";
       } else {
         document.getElementById("view-dashboard").classList.add("hidden");
         document.getElementById("view-analysis").classList.remove("hidden");
-        document.getElementById("nav-analysis").className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors bg-amber-500/10 text-amber-400";
-        document.getElementById("nav-dashboard").className = "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200";
+        document.getElementById("nav-analysis").className = "nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors bg-amber-500/10 text-amber-400";
+        document.getElementById("nav-dashboard").className = "nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors hover:bg-slate-800/60 text-slate-400 hover:text-slate-200";
       }
     }
   </script>
