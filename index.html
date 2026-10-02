@@ -111,7 +111,7 @@
       <div class="flex items-center gap-3">
         <div>
           <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2">
-            早安，窮逼 👋
+            早安，小桃鼠 👋
           </h1>
           <p class="text-xs text-slate-500 mt-0.5">今天是管理財務的好日子 · 清楚掌握收支動向</p>
         </div>
@@ -211,7 +211,7 @@
             </div>
           </div>
 
-          <!-- 六大分類甜甜圈圖 (佔 1 欄) -->
+          <!-- 七大分類甜甜圈圖 (佔 1 欄) -->
           <div class="bg-white p-6 rounded-2xl border border-slate-200/80 flex flex-col justify-between">
             <div class="flex justify-between items-center mb-2">
               <h3 class="text-sm font-bold text-slate-900">支出分類</h3>
@@ -222,7 +222,7 @@
             </div>
             <!-- 分類數值快速條 -->
             <div id="category-bars" class="space-y-2 mt-4 text-xs">
-              <!-- JS 動態產生六大分類佔比 -->
+              <!-- JS 動態產生七大分類佔比 -->
             </div>
           </div>
         </div>
@@ -236,19 +236,19 @@
                 近期交易明細
                 <span id="trans-count" class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-normal">0 筆</span>
               </h3>
-              <!-- 篩選器 -->
+              <!-- 篩選器（包含交通選項） -->
               <div class="flex gap-2">
                 <input type="text" id="search-input" onkeyup="filterTransactions()" placeholder="搜尋項目或金額..." class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500 w-36">
-<select id="cat-filter" onchange="filterTransactions()" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none text-slate-600">
-  <option value="ALL">全部類別</option>
-  <option value="餐飲">餐飲</option>
-  <option value="生活">生活</option>
-  <option value="家用">家用</option>
-  <option value="社交">社交</option>
-  <option value="娛樂">娛樂</option>
-  <option value="交通">交通</option>
-  <option value="雜支">雜支</option>
-</select>
+                <select id="cat-filter" onchange="filterTransactions()" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none text-slate-600">
+                  <option value="ALL">全部類別</option>
+                  <option value="餐飲">餐飲</option>
+                  <option value="生活">生活</option>
+                  <option value="家用">家用</option>
+                  <option value="社交">社交</option>
+                  <option value="娛樂">娛樂</option>
+                  <option value="交通">交通</option>
+                  <option value="雜支">雜支</option>
+                </select>
               </div>
             </div>
 
@@ -326,19 +326,19 @@
   </div>
 
   <script>
-    // 預設後端配置（固定寫死，無須任何 Token 鑑權）
+    // 預設後端配置（固定寫死為你的 Web App URL，無須 Token）
     const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwWTmYYpFKwTeKFXD-qRu-PEbVffM-D1iIRWg4bX-GZUdCC23eOv7umQCvl-LiBBqyi/exec";
 
-    // 1. 七大分類專用顏色配對表
-const CATEGORY_COLORS = {
-  "餐飲": "#F59E0B", // 琥珀橙
-  "生活": "#10B981", // 翡翠綠
-  "家用": "#3B82F6", // 經典藍
-  "社交": "#EC4899", // 玫瑰粉
-  "娛樂": "#8B5CF6", // 典雅紫
-  "交通": "#06B6D4", // 蔚藍青
-  "雜支": "#64748B"  // 質感灰
-};
+    // 1. 七大分類專用顏色配對表（含交通）
+    const CATEGORY_COLORS = {
+      "餐飲": "#F59E0B", // 琥珀橙
+      "生活": "#10B981", // 翡翠綠
+      "家用": "#3B82F6", // 經典藍
+      "社交": "#EC4899", // 玫瑰粉
+      "娛樂": "#8B5CF6", // 典雅紫
+      "交通": "#06B6D4", // 蔚藍青
+      "雜支": "#64748B"  // 質感灰
+    };
 
     let globalTransactions = [];
     let currentSelectedMonth = "";
@@ -349,7 +349,6 @@ const CATEGORY_COLORS = {
     window.addEventListener('DOMContentLoaded', () => {
       lucide.createIcons();
       initSettings();
-      // 還原側邊欄收合偏好
       if (localStorage.getItem("SIDEBAR_COLLAPSED") === "true") {
         document.getElementById("sidebar").classList.add("collapsed");
         updateSidebarToggleIcon(true);
@@ -407,10 +406,9 @@ const CATEGORY_COLORS = {
         const res = await fetch(apiUrl, { redirect: "follow" });
         const json = await res.json();
 
-        // 處理 GAS 的 details 矩陣資料: [["時間", "項目", "分類", "金額", "月份"], [...], ...]
         let rawRows = [];
         if (json.details && Array.isArray(json.details)) {
-          rawRows = json.details.slice(1); // 扣除第一列標題
+          rawRows = json.details.slice(1);
         } else if (Array.isArray(json.data)) {
           rawRows = json.data;
         } else if (Array.isArray(json)) {
@@ -419,7 +417,6 @@ const CATEGORY_COLORS = {
 
         globalTransactions = rawRows.map(row => {
           if (Array.isArray(row)) {
-            // [時間, 項目, 分類, 金額, 月份]
             let dRaw = String(row[0] || '');
             let monthRaw = String(row[4] || '');
             let dateFormatted = dRaw;
@@ -510,7 +507,6 @@ const CATEGORY_COLORS = {
         document.getElementById("stat-max-cat").textContent = "無";
       }
 
-      // 半年均值
       const allMonths = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
       let sum6 = 0;
       allMonths.forEach(m => {
@@ -519,12 +515,10 @@ const CATEGORY_COLORS = {
       const avg = allMonths.length > 0 ? Math.round(sum6 / allMonths.length) : 0;
       document.getElementById("stat-avg").textContent = avg.toLocaleString();
 
-      // ================== 動態預算與時間維度演算 ==================
       const budget = Number(localStorage.getItem("USER_MONTHLY_BUDGET") || "15000");
       const remain = budget - total;
       document.getElementById("stat-remain-budget").textContent = remain.toLocaleString();
 
-      // 計算月份天數與時間進度
       const now = new Date();
       const currentYearMonth = now.toISOString().substring(0, 7);
       
@@ -535,23 +529,17 @@ const CATEGORY_COLORS = {
       let remainDays = 1;
 
       if (currentSelectedMonth === currentYearMonth) {
-        // 當前月份：按今日天數計算
         passedDays = now.getDate();
-        remainDays = Math.max(1, daysInMonth - passedDays + 1); // 包含今天剩餘天數
+        remainDays = Math.max(1, daysInMonth - passedDays + 1);
       } else if (currentSelectedMonth > currentYearMonth) {
-        // 未來月份
         passedDays = 1;
         remainDays = daysInMonth;
       }
 
-      // 1. 原本表定每日預算 vs 預期應花額度
       const plannedDaily = Math.round(budget / daysInMonth);
       const expectedSpendToDate = plannedDaily * passedDays;
-
-      // 2. 接下來平均每日可花費配額
       const dailyAllow = remain > 0 ? Math.round(remain / remainDays) : 0;
 
-      // 更新說明文字：顯示原本預算與接下來每日可用配額
       const budgetDailyEl = document.getElementById("stat-budget-daily");
       if (remain > 0) {
         budgetDailyEl.textContent = `原每日 NT$ ${plannedDaily.toLocaleString()} ➜ 剩餘 ${remainDays} 天，每天可用 NT$ ${dailyAllow.toLocaleString()}`;
@@ -559,18 +547,15 @@ const CATEGORY_COLORS = {
         budgetDailyEl.textContent = `預算已透支 NT$ ${Math.abs(remain).toLocaleString()} · 本月剩餘天數無可用額度`;
       }
 
-      // 3. 狀態標籤判斷（動態時間進度比對）
       const statusEl = document.getElementById("stat-budget-status");
       if (statusEl) {
         if (remain < 0) {
           statusEl.textContent = "預算已超支";
           statusEl.className = "bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded text-[11px] font-semibold";
         } else if (total > expectedSpendToDate * 1.2) {
-          // 花費超過當前時間預期的 120%（嚴重偏快）
           statusEl.textContent = "花費嚴重超前";
           statusEl.className = "bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded text-[11px] font-semibold";
         } else if (total > expectedSpendToDate * 1.05) {
-          // 花費落在當前時間預期的 105% ~ 120% 之間
           statusEl.textContent = "花費略微偏快";
           statusEl.className = "bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded text-[11px] font-semibold";
         } else {
@@ -580,18 +565,17 @@ const CATEGORY_COLORS = {
       }
     }
 
-    // 5. 圖表渲染
+    // 5. 圖表渲染（包含七大分類）
     function renderCharts() {
       const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
       document.getElementById("pie-month-label").textContent = `${currentSelectedMonth} 佔比`;
 
-const catTotals = { "餐飲": 0, "生活": 0, "家用": 0, "社交": 0, "娛樂": 0, "交通": 0, "雜支": 0 };
+      const catTotals = { "餐飲": 0, "生活": 0, "家用": 0, "社交": 0, "娛樂": 0, "交通": 0, "雜支": 0 };
       monthData.forEach(t => {
-        if (catTotals[t.categ     consory] !== undefined) catTotals[t.category] += t.amount;
+        if (catTotals[t.category] !== undefined) catTotals[t.category] += t.amount;
         else catTotals["雜支"] += t.amount;
       });
 
-      // 圓餅圖
       const pieCtx = document.getElementById('pieChart').getContext('2d');
       if (pieChartInstance) pieChartInstance.destroy();
       pieChartInstance = new Chart(pieCtx, {
@@ -612,7 +596,6 @@ const catTotals = { "餐飲": 0, "生活": 0, "家用": 0, "社交": 0, "娛樂"
         }
       });
 
-      // 分類條
       const catListEl = document.getElementById("category-bars");
       const progressEl = document.getElementById("category-progress-list");
       catListEl.innerHTML = "";
@@ -643,7 +626,6 @@ const catTotals = { "餐飲": 0, "生活": 0, "家用": 0, "社交": 0, "娛樂"
           </div>`;
       });
 
-      // 趨勢圖 (近 6 個月)
       const last6Months = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
       const mTotals = last6Months.map(m => globalTransactions.filter(t => t.month === m).reduce((s, t) => s + t.amount, 0));
 
@@ -721,7 +703,7 @@ const catTotals = { "餐飲": 0, "生活": 0, "家用": 0, "社交": 0, "娛樂"
     // 7. 分析分頁
     function renderAnalysisView() {
       const allMonths = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
-const cats = ["餐飲", "生活", "家用", "社交", "娛樂", "交通", "雜支"];
+      const cats = ["餐飲", "生活", "家用", "社交", "娛樂", "交通", "雜支"];
       
       const datasets = cats.map(c => ({
         label: c,
