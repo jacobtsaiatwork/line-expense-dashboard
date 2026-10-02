@@ -111,7 +111,7 @@
       <div class="flex items-center gap-3">
         <div>
           <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2">
-            早安，小桃鼠 👋
+            <span id="greeting-text">早安</span>，窮逼 👋
           </h1>
           <p class="text-xs text-slate-500 mt-0.5">今天是管理財務的好日子 · 清楚掌握收支動向</p>
         </div>
@@ -202,7 +202,7 @@
             <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
               <div>
                 <h3 id="trend-title" class="text-sm font-bold text-slate-900">月度支出與預算對比</h3>
-                <p id="trend-subtitle" class="text-xs text-slate-400">綠色表示在預算內，紅色表示超支，虛線為每月預算目標</p>
+                <p id="trend-subtitle" class="text-xs text-slate-400">墨綠色表示在預算內，紅色表示超支，虛線為每月預算目標</p>
               </div>
               
               <!-- 三合一切換按鈕組 -->
@@ -363,6 +363,7 @@
 
     window.addEventListener('DOMContentLoaded', () => {
       lucide.createIcons();
+      updateDynamicGreeting();
       initSettings();
       if (localStorage.getItem("SIDEBAR_COLLAPSED") === "true") {
         document.getElementById("sidebar").classList.add("collapsed");
@@ -370,6 +371,21 @@
       }
       fetchData();
     });
+
+    // 動態時段問候語判定
+    function updateDynamicGreeting() {
+      const hour = new Date().getHours();
+      let greeting = "早安";
+      if (hour >= 11 && hour < 13) {
+        greeting = "午安";
+      } else if (hour >= 13 && hour < 18) {
+        greeting = "下午好";
+      } else if (hour >= 18 || hour < 5) {
+        greeting = "晚安";
+      }
+      const el = document.getElementById("greeting-text");
+      if (el) el.textContent = greeting;
+    }
 
     // 側邊欄縮小/展開切換函式
     function toggleSidebar() {
@@ -397,7 +413,6 @@
       const btnDaily = document.getElementById("btn-chart-daily");
       const btnStacked = document.getElementById("btn-chart-stacked");
 
-      // 重設樣式
       const activeClass = "px-2.5 py-1 rounded-lg font-medium transition-all bg-white text-emerald-700 shadow-sm";
       const inactiveClass = "px-2.5 py-1 rounded-lg font-medium transition-all text-slate-500 hover:text-slate-900";
 
@@ -518,6 +533,7 @@
     }
 
     function updateAllViews() {
+      updateDynamicGreeting();
       renderStats();
       renderCharts();
       renderTransactions();
@@ -606,7 +622,6 @@
       renderPieChart();
     }
 
-    // 渲染趨勢圖（支援三合一切換）
     function renderTrendChart() {
       const trendCtx = document.getElementById('trendChart').getContext('2d');
       if (trendChartInstance) trendChartInstance.destroy();
@@ -616,7 +631,6 @@
       const budgetTarget = Number(localStorage.getItem("USER_MONTHLY_BUDGET") || "15000");
 
       if (currentTrendMode === 'budget') {
-        // ========== 模式 1：預算 vs 實質支出對比圖 ==========
         titleEl.textContent = "月度支出與預算對比";
         subtitleEl.textContent = "墨綠色表示在預算內，紅色表示超支，虛線為每月預算目標";
 
@@ -666,7 +680,6 @@
         });
 
       } else if (currentTrendMode === 'daily') {
-        // ========== 模式 2：當月累積支出走勢圖 (燃盡曲線) ==========
         titleEl.textContent = `${currentSelectedMonth} 每日累積支出走勢`;
         subtitleEl.textContent = "綠色實線為實際累積開銷，灰色虛線為理想均勻花費進度";
 
@@ -674,7 +687,6 @@
         const daysInMonth = new Date(year, month, 0).getDate();
         const daysLabels = Array.from({ length: daysInMonth }, (_, i) => `${i + 1}日`);
 
-        // 計算每日實際花費與累積值
         const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
         const dailySpend = Array(daysInMonth).fill(0);
 
@@ -690,7 +702,6 @@
           }
         });
 
-        // 建立累積數據
         const cumulativeActual = [];
         let runningTotal = 0;
         const now = new Date();
@@ -702,11 +713,10 @@
             runningTotal += dailySpend[d];
             cumulativeActual.push(runningTotal);
           } else {
-            cumulativeActual.push(null); // 未來天數不繪製實線
+            cumulativeActual.push(null);
           }
         }
 
-        // 理想均勻累積線
         const idealDailyRate = budgetTarget / daysInMonth;
         const idealPace = Array.from({ length: daysInMonth }, (_, i) => Math.round(idealDailyRate * (i + 1)));
 
@@ -754,7 +764,6 @@
         });
 
       } else if (currentTrendMode === 'stacked') {
-        // ========== 模式 3：近半年類別堆疊圖 ==========
         titleEl.textContent = "近 6 個月支出結構堆疊";
         subtitleEl.textContent = "分析每月總花費中各類別的組成比重";
 
@@ -793,7 +802,6 @@
       }
     }
 
-    // 渲染圓餅圖
     function renderPieChart() {
       const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
       document.getElementById("pie-month-label").textContent = `${currentSelectedMonth} 佔比`;
