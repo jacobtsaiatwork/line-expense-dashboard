@@ -4,17 +4,19 @@
  * ==============================================================================
  * 
  * 核心功能：
- * 1. 【doPost】支援「自然語言文字」與「拍照/發票/超商便當/彩券」雙模態自動記帳
- * 2. 【視覺辨識】透過 LINE API 下載照片 -> Gemini 3.5 視覺多模態辨識金額、店家與品名
- * 3. 【doGet】提供前端儀表板 (Cloudflare Pages) 免 Token 讀取帳目資料
- * 4. 【快取去重】使用 CacheService 防止 LINE 伺服器重試導致重複記帳
- * 5. 【日期格式】以原生 Date 物件寫入試算表，呈現「yyyy/M/d 上午/下午 hh:mm:ss」真日期
- * 6. 【Gemini 3 系列備援鏈】gemini-3.5-flash-lite -> gemini-3.5-flash -> 3.1-flash-lite -> 3.8-flash
+ * 1. 【doPost】支援「自然語言文字」、「拍照/發票/超商便當/彩券」及「刪除/undo」指令
+ * 2. 【刪除指令】輸入「刪除」或「undo」自動刪除上一筆明細並扣除月度彙總
+ * 3. 【極速回覆】配置 thinkingLevel: "low" 縮短 Gemini 3.5 思考推論時間（1~3秒秒回）
+ * 4. 【視覺辨識】透過 LINE API 下載照片 -> Gemini 3.5 視覺多模態辨識金額、店家與品名
+ * 5. 【doGet】提供前端儀表板 (Cloudflare Pages) 免 Token 讀取帳目資料
+ * 6. 【快取去重】使用 CacheService 防止 LINE 伺服器重試導致重複記帳
+ * 7. 【日期格式】以原生 Date 物件寫入試算表，呈現「yyyy/M/d 上午/下午 hh:mm:ss」真日期
+ * 8. 【Gemini 3 系列備援鏈】gemini-3.5-flash-lite -> gemini-3.5-flash -> 3.1-flash-lite
  * ==============================================================================
  */
 
 // ==============================================================================
-// 1. 核心參數設定區（優先讀取「指令碼屬性」，若無則使用預設值）
+// 1. 核心參數設定區
 // ==============================================================================
 const CONFIG = {
   LINE_CHANNEL_ACCESS_TOKEN: getSecret('LINE_CHANNEL_ACCESS_TOKEN', '請填入你的LINE_TOKEN'),
@@ -24,18 +26,14 @@ const CONFIG = {
 
 // 官方現行極速且支援多模態視覺辨識的 Gemini 3 系列模型清單
 const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite', // 極速、低延遲、高額度主力首選
-  'gemini-3.5-flash',      // 視覺多模態與推論強大
-  'gemini-3.1-flash-lite', // 備援
-  'gemini-3.8-flash'       // 旗艦級 Flash 備援
+  'gemini-3.5-flash-lite', // 極速、低延遲主力首選
+  'gemini-3.5-flash',      // 視覺多模態旗艦
+  'gemini-3.1-flash-lite'  // 備援
 ];
 
 // 七大分類標準白名單
 const VALID_CATEGORIES = ['餐飲', '生活', '家用', '社交', '娛樂', '交通', '雜支'];
 
-/**
- * 取得設定值（優先讀取「指令碼屬性」，若無則使用預設值）
- */
 function getSecret(key, defaultValue = '') {
   try {
     const prop = PropertiesService.getScriptProperties().getProperty(key);
@@ -46,9 +44,6 @@ function getSecret(key, defaultValue = '') {
   return (defaultValue || '').trim();
 }
 
-/**
- * 取得試算表實例
- */
 function getSpreadsheet() {
   if (CONFIG.SPREADSHEET_ID && !CONFIG.SPREADSHEET_ID.startsWith('YOUR_') && !CONFIG.SPREADSHEET_ID.startsWith('請填入')) {
     return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
@@ -98,11 +93,25 @@ function doPost(e) {
       if (msgType === 'text') {
         const userText = (event.message.text || '').trim();
 
+        // 1. 系統連線測試
         if (userText.toLowerCase() === 'ping') {
           replyToLine(replyToken, 'pong 🏓 系統連線正常！');
           continue;
         }
 
+        // 2. 刪除 / 復原指令 (支援：刪除, 刪除上一筆, 刪除最後一筆, undo, 復原)
+        const deleteCommands = ['刪除', '刪除上一筆', '刪除最後一筆', 'undo', '復原'];
+        if (deleteCommands.includes(userText.toLowerCase())) {
+          const delRes = deleteLastRecord();
+          if (delRes.success) {
+            replyToLine(replyToken, `🗑️ 已成功刪除上一筆紀錄！\n項目：${delRes.item}\n金額：${delRes.amount}\n分類：${delRes.category}`);
+          } else {
+            replyToLine(replyToken, `⚠️ ${delRes.message}`);
+          }
+          continue;
+        }
+
+        // 3. 一般文字自然語言記帳
         try {
           const parsedData = callGeminiText(userText);
           writeToSheet(parsedData.item, parsedData.category, parsedData.amount);
@@ -111,7 +120,7 @@ function doPost(e) {
 
         } catch (err) {
           Logger.log(`❌ 文字記帳失敗: ${err.message}`);
-          const helpMessage = `❓ 無法辨識消費內容。\n請嘗試輸入範例：「午餐排骨便當 120」\n(除錯: ${err.message})`;
+          const helpMessage = `❓ 無法辨識消費內容。\n請嘗試輸入範例：「午餐排骨便當 120」\n若要刪除上一筆請輸入「刪除」\n(除錯: ${err.message})`;
           replyToLine(replyToken, helpMessage);
         }
 
@@ -222,6 +231,9 @@ function callGeminiText(userText) {
     ],
     generationConfig: {
       responseMimeType: "application/json",
+      thinkingConfig: {
+        thinkingLevel: "low"
+      },
       temperature: 0.1
     }
   };
@@ -282,6 +294,9 @@ function callGeminiVision(imageObj) {
     ],
     generationConfig: {
       responseMimeType: "application/json",
+      thinkingConfig: {
+        thinkingLevel: "low"
+      },
       temperature: 0.1
     }
   };
@@ -358,7 +373,7 @@ function executeGeminiRequest(payload) {
 }
 
 // ==============================================================================
-// 7. Google 試算表寫入核心（原生真日期 + 月份靠右對齊）
+// 7. Google 試算表寫入與刪除核心
 // ==============================================================================
 function writeToSheet(item, category, amount) {
   const ss = getSpreadsheet();
@@ -391,6 +406,40 @@ function writeToSheet(item, category, amount) {
 }
 
 /**
+ * 刪除最後一筆紀錄核心函式
+ */
+function deleteLastRecord() {
+  const ss = getSpreadsheet();
+  const detailSheet = ss.getSheetByName('記帳明細') || ss.getSheets()[0];
+  const lastRow = detailSheet.getLastRow();
+
+  if (lastRow <= 1) {
+    return { success: false, message: '目前沒有任何明細紀錄可供刪除。' };
+  }
+
+  const rowValues = detailSheet.getRange(lastRow, 1, 1, 5).getValues()[0];
+  const item = rowValues[1];
+  const category = rowValues[2];
+  const amount = Number(rowValues[3]) || 0;
+  const monthStr = String(rowValues[4] || '').trim();
+
+  // 1. 刪除記帳明細最後一列
+  detailSheet.deleteRow(lastRow);
+
+  // 2. 同步從「月度彙總」扣回金額
+  if (monthStr && amount > 0) {
+    deductMonthlySummary(ss, monthStr, amount);
+  }
+
+  return {
+    success: true,
+    item: item,
+    category: category,
+    amount: amount
+  };
+}
+
+/**
  * 同步累加更新「月度彙總」工作表
  */
 function syncMonthlySummary(ss, monthStr, amount) {
@@ -416,6 +465,27 @@ function syncMonthlySummary(ss, monthStr, amount) {
     const newRow = summarySheet.getLastRow();
     summarySheet.getRange(newRow, 1).setNumberFormat("@").setHorizontalAlignment("right");
     summarySheet.getRange(newRow, 2).setNumberFormat("#,##0");
+  }
+}
+
+/**
+ * 同步扣除更新「月度彙總」工作表
+ */
+function deductMonthlySummary(ss, monthStr, amount) {
+  const summarySheet = ss.getSheetByName('月度彙總');
+  if (!summarySheet) return;
+
+  const data = summarySheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    const rowMonth = String(data[i][0]).trim();
+    if (rowMonth === monthStr || rowMonth.startsWith(monthStr)) {
+      const currentVal = Number(data[i][1]) || 0;
+      const newVal = Math.max(0, currentVal - amount);
+      summarySheet.getRange(i + 1, 2).setValue(newVal);
+      summarySheet.getRange(i + 1, 2).setNumberFormat("#,##0");
+      break;
+    }
   }
 }
 
