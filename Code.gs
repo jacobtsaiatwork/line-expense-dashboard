@@ -4,14 +4,12 @@
  * ==============================================================================
  * 
  * 核心功能：
- * 1. 【doPost】支援「自然語言文字」、「拍照/發票/超商便當/彩券」及「刪除/undo」指令
- * 2. 【刪除指令】輸入「刪除」或「undo」自動刪除上一筆明細並扣除月度彙總
- * 3. 【極速回覆】配置 thinkingLevel: "low" 縮短 Gemini 3.5 思考推論時間（1~3秒秒回）
- * 4. 【視覺辨識】透過 LINE API 下載照片 -> Gemini 3.5 視覺多模態辨識金額、店家與品名
- * 5. 【doGet】提供前端儀表板 (Cloudflare Pages) 免 Token 讀取帳目資料
- * 6. 【快取去重】使用 CacheService 防止 LINE 伺服器重試導致重複記帳
- * 7. 【日期格式】以原生 Date 物件寫入試算表，呈現「yyyy/M/d 上午/下午 hh:mm:ss」真日期
- * 8. 【Gemini 3 系列備援鏈】gemini-3.5-flash-lite -> gemini-3.5-flash -> 3.1-flash-lite
+ * 1. 【doPost】支援「文字自然語言」、「拍照/發票/便當/彩券」
+ * 2. 【查帳功能】輸入「查詢」或「查帳」列出本月最近 10 筆編號明細
+ * 3. 【精準刪除】輸入「刪除」刪除最後一筆；輸入「刪除 3」刪除指定編號
+ * 4. 【精準修改】輸入「改 3 金額 150」或「改 3 項目 威力彩」即時更正
+ * 5. 【極速回覆】配置 thinkingLevel: "low" 縮短推論時間（1~3秒秒回）
+ * 6. 【雙向同步】明細刪修會自動同步更新「月度彙總」工作表金額
  * ==============================================================================
  */
 
@@ -76,6 +74,7 @@ function doPost(e) {
 
       const replyToken = event.replyToken;
       const eventId = event.webhookEventId || replyToken;
+      const userId = (event.source && event.source.userId) ? event.source.userId : 'default';
 
       // 【去重機制】1 分鐘內防重複處理
       const cacheKey = 'line_evt_' + eventId;
@@ -99,19 +98,47 @@ function doPost(e) {
           continue;
         }
 
-        // 2. 刪除 / 復原指令 (支援：刪除, 刪除上一筆, 刪除最後一筆, undo, 復原)
-        const deleteCommands = ['刪除', '刪除上一筆', '刪除最後一筆', 'undo', '復原'];
-        if (deleteCommands.includes(userText.toLowerCase())) {
+        // 2. 查詢本月明細（輸入：查詢、查帳、明細、本月明細、list）
+        const queryCmds = ['查詢', '查帳', '明細', '本月明細', 'list', '查看'];
+        if (queryCmds.includes(userText.toLowerCase())) {
+          const queryMsg = getMonthlyListMessage(userId);
+          replyToLine(replyToken, queryMsg);
+          continue;
+        }
+
+        // 3. 刪除指令
+        // A. 刪除指定編號（例如：「刪除 3」、「del 2」）
+        const delIndexMatch = userText.match(/^(?:刪除|del|delete)\s*(\d+)$/i);
+        if (delIndexMatch) {
+          const indexNum = parseInt(delIndexMatch[1], 10);
+          const delRes = deleteRecordByIndex(indexNum, userId);
+          replyToLine(replyToken, delRes.message);
+          continue;
+        }
+
+        // B. 刪除最後一筆（例如：「刪除」、「刪除上一筆」、「undo」、「復原」）
+        const deleteLastCmds = ['刪除', '刪除上一筆', '刪除最後一筆', 'undo', '復原'];
+        if (deleteLastCmds.includes(userText.toLowerCase())) {
           const delRes = deleteLastRecord();
           if (delRes.success) {
-            replyToLine(replyToken, `🗑️ 已成功刪除上一筆紀錄！\n項目：${delRes.item}\n金額：${delRes.amount}\n分類：${delRes.category}`);
+            replyToLine(replyToken, `🗑️ 已成功刪除上一筆紀錄！\n項目：${delRes.item}\n金額：${delRes.amount} 元\n分類：${delRes.category}`);
           } else {
             replyToLine(replyToken, `⚠️ ${delRes.message}`);
           }
           continue;
         }
 
-        // 3. 一般文字自然語言記帳
+        // 4. 修改指定編號指令（例如：「改 3 金額 150」、「改 3 項目 威力彩」、「改 3 分類 生活」）
+        const modMatch = userText.match(/^(?:修改|改)\s*(\d+)\s*(.+)$/i);
+        if (modMatch) {
+          const indexNum = parseInt(modMatch[1], 10);
+          const modContent = modMatch[2].trim();
+          const modRes = modifyRecordByIndex(indexNum, modContent, userId);
+          replyToLine(replyToken, modRes.message);
+          continue;
+        }
+
+        // 5. 一般文字自然語言記帳
         try {
           const parsedData = callGeminiText(userText);
           writeToSheet(parsedData.item, parsedData.category, parsedData.amount);
@@ -120,7 +147,7 @@ function doPost(e) {
 
         } catch (err) {
           Logger.log(`❌ 文字記帳失敗: ${err.message}`);
-          const helpMessage = `❓ 無法辨識消費內容。\n請嘗試輸入範例：「午餐排骨便當 120」\n若要刪除上一筆請輸入「刪除」\n(除錯: ${err.message})`;
+          const helpMessage = `❓ 無法辨識消費內容。\n請嘗試輸入範例：「午餐排骨便當 120」\n• 查帳請輸入「查詢」\n• 刪除請輸入「刪除」\n(除錯: ${err.message})`;
           replyToLine(replyToken, helpMessage);
         }
 
@@ -373,7 +400,265 @@ function executeGeminiRequest(payload) {
 }
 
 // ==============================================================================
-// 7. Google 試算表寫入與刪除核心
+// 7. 查帳、刪除與修改明細模組
+// ==============================================================================
+
+/**
+ * 取得本月明細列表並快取行號
+ */
+function getMonthlyListMessage(userId) {
+  const ss = getSpreadsheet();
+  const detailSheet = ss.getSheetByName('記帳明細') || ss.getSheets()[0];
+  const lastRow = detailSheet.getLastRow();
+
+  if (lastRow <= 1) {
+    return '📋 目前試算表中尚無任何記帳紀錄。';
+  }
+
+  const now = new Date();
+  const currentMonth = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM');
+
+  const data = detailSheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  const displayValues = detailSheet.getRange(2, 1, lastRow - 1, 5).getDisplayValues();
+
+  // 篩選本月的紀錄
+  const monthItems = [];
+  for (let i = 0; i < data.length; i++) {
+    const rowMonth = String(data[i][4] || '').trim();
+    if (rowMonth === currentMonth || rowMonth.startsWith(currentMonth)) {
+      monthItems.push({
+        sheetRow: i + 2,
+        time: displayValues[i][0],
+        item: displayValues[i][1],
+        category: displayValues[i][2],
+        amount: Number(data[i][3]) || 0,
+        amountStr: displayValues[i][3]
+      });
+    }
+  }
+
+  if (monthItems.length === 0) {
+    return `📋 本月 (${currentMonth}) 尚無任何記帳紀錄。`;
+  }
+
+  // 取最近 10 筆
+  const recentItems = monthItems.slice(-10);
+  const rowMapping = {};
+
+  let msg = `📋 本月 (${currentMonth}) 最近 ${recentItems.length} 筆明細：\n`;
+
+  let totalMonthSpend = 0;
+  monthItems.forEach(item => totalMonthSpend += item.amount);
+
+  recentItems.forEach((it, idx) => {
+    const indexNum = idx + 1;
+    rowMapping[indexNum] = it.sheetRow;
+
+    // 格式化時間（只取 月/日）
+    let datePart = '';
+    const dateMatch = it.time.match(/(\d+)\/(\d+)\s/);
+    if (dateMatch) {
+      datePart = `${dateMatch[1]}/${dateMatch[2]} `;
+    }
+
+    msg += `\n[${indexNum}] ${datePart}${it.item} $${it.amountStr} (${it.category})`;
+  });
+
+  msg += `\n\n💰 本月累積總計：$${totalMonthSpend.toLocaleString()} 元`;
+  msg += `\n-----------------------`;
+  msg += `\n💡 快捷操作指令：`;
+  msg += `\n• 刪除特定筆：輸入「刪除 數字」（例：刪除 ${recentItems.length}）`;
+  msg += `\n• 修改金額：輸入「改 數字 金額 數值」（例：改 ${recentItems.length} 金額 200）`;
+  msg += `\n• 修改項目：輸入「改 數字 項目 名稱」`;
+  msg += `\n• 刪除最後一筆：直接輸入「刪除」`;
+
+  // 將當前查詢的行號存入 Cache（有效期 30 分鐘）
+  try {
+    const cache = CacheService.getScriptCache();
+    cache.put('query_rows_' + userId, JSON.stringify(rowMapping), 1800);
+  } catch (e) {}
+
+  return msg;
+}
+
+/**
+ * 依編號刪除特定紀錄
+ */
+function deleteRecordByIndex(indexNum, userId) {
+  const ss = getSpreadsheet();
+  const detailSheet = ss.getSheetByName('記帳明細') || ss.getSheets()[0];
+  const lastRow = detailSheet.getLastRow();
+
+  if (lastRow <= 1) {
+    return { success: false, message: '目前沒有任何明細紀錄可供刪除。' };
+  }
+
+  let targetRow = null;
+
+  // 1. 嘗試從快取取得對應行號
+  try {
+    const cache = CacheService.getScriptCache();
+    const cachedStr = cache.get('query_rows_' + userId);
+    if (cachedStr) {
+      const mapping = JSON.parse(cachedStr);
+      if (mapping && mapping[indexNum]) {
+        targetRow = mapping[indexNum];
+      }
+    }
+  } catch (e) {}
+
+  // 2. 若快取過期，動態重新抓取本月最後 10 筆推算行號
+  if (!targetRow) {
+    const now = new Date();
+    const currentMonth = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM');
+    const data = detailSheet.getRange(2, 5, lastRow - 1, 1).getValues();
+    const monthRows = [];
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][0]).trim().startsWith(currentMonth)) {
+        monthRows.push(i + 2);
+      }
+    }
+    const recentRows = monthRows.slice(-10);
+    if (indexNum >= 1 && indexNum <= recentRows.length) {
+      targetRow = recentRows[indexNum - 1];
+    }
+  }
+
+  if (!targetRow || targetRow > detailSheet.getLastRow()) {
+    return { success: false, message: `找不到編號 [${indexNum}] 的紀錄。\n請先輸入「查詢」查看最新編號！` };
+  }
+
+  const rowValues = detailSheet.getRange(targetRow, 1, 1, 5).getValues()[0];
+  const item = rowValues[1];
+  const category = rowValues[2];
+  const amount = Number(rowValues[3]) || 0;
+  const monthStr = String(rowValues[4] || '').trim();
+
+  // 刪除該行
+  detailSheet.deleteRow(targetRow);
+
+  // 同步從月度彙總扣除
+  if (monthStr && amount > 0) {
+    deductMonthlySummary(ss, monthStr, amount);
+  }
+
+  // 清除快取讓下次查詢重整
+  try {
+    CacheService.getScriptCache().remove('query_rows_' + userId);
+  } catch (e) {}
+
+  return {
+    success: true,
+    message: `🗑️ 已成功刪除第 [${indexNum}] 筆紀錄！\n項目：${item}\n金額：${amount.toLocaleString()} 元\n分類：${category}\n\n已同步扣除月度彙總金額。`
+  };
+}
+
+/**
+ * 依編號修改特定紀錄（支援修改金額、項目、分類）
+ */
+function modifyRecordByIndex(indexNum, modContent, userId) {
+  const ss = getSpreadsheet();
+  const detailSheet = ss.getSheetByName('記帳明細') || ss.getSheets()[0];
+  const lastRow = detailSheet.getLastRow();
+
+  if (lastRow <= 1) {
+    return { success: false, message: '目前沒有任何明細紀錄可供修改。' };
+  }
+
+  let targetRow = null;
+
+  // 1. 嘗試從快取取得行號
+  try {
+    const cache = CacheService.getScriptCache();
+    const cachedStr = cache.get('query_rows_' + userId);
+    if (cachedStr) {
+      const mapping = JSON.parse(cachedStr);
+      if (mapping && mapping[indexNum]) {
+        targetRow = mapping[indexNum];
+      }
+    }
+  } catch (e) {}
+
+  // 2. 若無快取，動態計算本月行號
+  if (!targetRow) {
+    const now = new Date();
+    const currentMonth = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM');
+    const data = detailSheet.getRange(2, 5, lastRow - 1, 1).getValues();
+    const monthRows = [];
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][0]).trim().startsWith(currentMonth)) {
+        monthRows.push(i + 2);
+      }
+    }
+    const recentRows = monthRows.slice(-10);
+    if (indexNum >= 1 && indexNum <= recentRows.length) {
+      targetRow = recentRows[indexNum - 1];
+    }
+  }
+
+  if (!targetRow || targetRow > detailSheet.getLastRow()) {
+    return { success: false, message: `找不到編號 [${indexNum}] 的紀錄。\n請先輸入「查詢」查看最新編號！` };
+  }
+
+  const rowValues = detailSheet.getRange(targetRow, 1, 1, 5).getValues()[0];
+  let currentItem = rowValues[1];
+  let currentCategory = rowValues[2];
+  let currentAmount = Number(rowValues[3]) || 0;
+  const monthStr = String(rowValues[4] || '').trim();
+
+  let changeLog = [];
+
+  // 判斷修改欄位：
+  // 1. 金額修改（例：金額 150、價格 200、$250、250）
+  const amountMatch = modContent.match(/(?:金額|價格|\$)?\s*(\d+)/);
+  if (amountMatch && (modContent.includes('金額') || modContent.includes('價格') || modContent.includes('$') || /^\d+$/.test(modContent))) {
+    const newAmount = Number(amountMatch[1]);
+    const diff = newAmount - currentAmount;
+    detailSheet.getRange(targetRow, 4).setValue(newAmount).setNumberFormat("#,##0");
+    if (diff !== 0 && monthStr) {
+      syncMonthlySummary(ss, monthStr, diff);
+    }
+    changeLog.push(`金額：${currentAmount.toLocaleString()} ➜ ${newAmount.toLocaleString()} 元`);
+    currentAmount = newAmount;
+  }
+
+  // 2. 項目修改（例：項目 威力彩、品名 大樂透）
+  const itemMatch = modContent.match(/(?:項目|品名|名稱)\s*(.+)/);
+  if (itemMatch) {
+    const newItem = itemMatch[1].trim();
+    detailSheet.getRange(targetRow, 2).setValue(newItem);
+    changeLog.push(`項目：${currentItem} ➜ ${newItem}`);
+    currentItem = newItem;
+  }
+
+  // 3. 分類修改（例：分類 生活）
+  const catMatch = modContent.match(/(?:分類|類別)\s*(.+)/);
+  if (catMatch) {
+    let newCat = catMatch[1].trim();
+    if (VALID_CATEGORIES.includes(newCat)) {
+      detailSheet.getRange(targetRow, 3).setValue(newCat);
+      changeLog.push(`分類：${currentCategory} ➜ ${newCat}`);
+      currentCategory = newCat;
+    } else {
+      changeLog.push(`⚠️ 分類「${newCat}」不在七大分類中，未修改分類`);
+    }
+  }
+
+  if (changeLog.length === 0) {
+    return {
+      success: false,
+      message: `❓ 無法辨識修改內容。\n指令範例：\n• 改 ${indexNum} 金額 150\n• 改 ${indexNum} 項目 威力彩\n• 改 ${indexNum} 分類 娛樂`
+    };
+  }
+
+  return {
+    success: true,
+    message: `✏️ 已成功修改第 [${indexNum}] 筆紀錄！\n${changeLog.join('\n')}\n\n目前該筆狀態：${currentItem} | $${currentAmount.toLocaleString()} | ${currentCategory}`
+  };
+}
+
+// ==============================================================================
+// 8. Google 試算表寫入與月度統計更新
 // ==============================================================================
 function writeToSheet(item, category, amount) {
   const ss = getSpreadsheet();
@@ -490,7 +775,7 @@ function deductMonthlySummary(ss, monthStr, amount) {
 }
 
 // ==============================================================================
-// 8. LINE 訊息回覆模組
+// 9. LINE 訊息回覆模組
 // ==============================================================================
 function replyToLine(replyToken, messageText) {
   const token = CONFIG.LINE_CHANNEL_ACCESS_TOKEN;
@@ -526,7 +811,7 @@ function replyToLine(replyToken, messageText) {
 }
 
 // ==============================================================================
-// 9. 前端儀表板 API 介面 (doGet - 免 Token 驗證版)
+// 10. 前端儀表板 API 介面 (doGet - 免 Token 驗證版)
 // ==============================================================================
 function doGet(e) {
   try {
