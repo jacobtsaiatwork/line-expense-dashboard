@@ -195,16 +195,28 @@
           </div>
         </div>
 
-        <!-- 中層圖表 (月度趨勢 + 支出分類圓餅) -->
+        <!-- 中層圖表 (三合一動態趨勢圖 + 支出分類圓餅) -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <!-- 趨勢長條圖 (佔 2 欄) -->
+          <!-- 趨勢圖表區塊 (佔 2 欄) -->
           <div class="bg-white p-6 rounded-2xl border border-slate-200/80 lg:col-span-2">
-            <div class="flex justify-between items-center mb-4">
+            <div class="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4">
               <div>
-                <h3 class="text-sm font-bold text-slate-900">月度支出趨勢</h3>
-                <p class="text-xs text-slate-400">點選柱狀圖可切換查看該月份數據</p>
+                <h3 id="trend-title" class="text-sm font-bold text-slate-900">月度支出與預算對比</h3>
+                <p id="trend-subtitle" class="text-xs text-slate-400">綠色表示在預算內，紅色表示超支，虛線為每月預算目標</p>
               </div>
-              <span class="text-xs bg-emerald-50 text-emerald-700 font-semibold px-2 py-1 rounded">近 6 個月</span>
+              
+              <!-- 三合一切換按鈕組 -->
+              <div class="flex bg-slate-100 p-1 rounded-xl gap-1 self-start sm:self-auto text-xs">
+                <button id="btn-chart-budget" onclick="switchTrendMode('budget')" class="px-2.5 py-1 rounded-lg font-medium transition-all bg-white text-emerald-700 shadow-sm">
+                  預算對比
+                </button>
+                <button id="btn-chart-daily" onclick="switchTrendMode('daily')" class="px-2.5 py-1 rounded-lg font-medium transition-all text-slate-500 hover:text-slate-900">
+                  每日累積
+                </button>
+                <button id="btn-chart-stacked" onclick="switchTrendMode('stacked')" class="px-2.5 py-1 rounded-lg font-medium transition-all text-slate-500 hover:text-slate-900">
+                  類別堆疊
+                </button>
+              </div>
             </div>
             <div class="h-64">
               <canvas id="trendChart"></canvas>
@@ -236,7 +248,7 @@
                 近期交易明細
                 <span id="trans-count" class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-normal">0 筆</span>
               </h3>
-              <!-- 篩選器（包含交通選項） -->
+              <!-- 篩選器 -->
               <div class="flex gap-2">
                 <input type="text" id="search-input" onkeyup="filterTransactions()" placeholder="搜尋項目或金額..." class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500 w-36">
                 <select id="cat-filter" onchange="filterTransactions()" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none text-slate-600">
@@ -326,7 +338,7 @@
   </div>
 
   <script>
-    // 預設後端配置（固定寫死為你的 Web App URL，無須 Token）
+    // 預設後端配置（固定寫死，無須任何 Token 鑑權）
     const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwWTmYYpFKwTeKFXD-qRu-PEbVffM-D1iIRWg4bX-GZUdCC23eOv7umQCvl-LiBBqyi/exec";
 
     // 1. 七大分類專用顏色配對表（含交通）
@@ -345,6 +357,9 @@
     let trendChartInstance = null;
     let pieChartInstance = null;
     let stackedChartInstance = null;
+
+    // 當前趨勢圖模式：'budget' (預算對比) | 'daily' (每日累積) | 'stacked' (類別堆疊)
+    let currentTrendMode = 'budget';
 
     window.addEventListener('DOMContentLoaded', () => {
       lucide.createIcons();
@@ -374,6 +389,25 @@
       lucide.createIcons();
     }
 
+    // 趨勢圖模式切換控制
+    function switchTrendMode(mode) {
+      currentTrendMode = mode;
+
+      const btnBudget = document.getElementById("btn-chart-budget");
+      const btnDaily = document.getElementById("btn-chart-daily");
+      const btnStacked = document.getElementById("btn-chart-stacked");
+
+      // 重設樣式
+      const activeClass = "px-2.5 py-1 rounded-lg font-medium transition-all bg-white text-emerald-700 shadow-sm";
+      const inactiveClass = "px-2.5 py-1 rounded-lg font-medium transition-all text-slate-500 hover:text-slate-900";
+
+      btnBudget.className = mode === 'budget' ? activeClass : inactiveClass;
+      btnDaily.className = mode === 'daily' ? activeClass : inactiveClass;
+      btnStacked.className = mode === 'stacked' ? activeClass : inactiveClass;
+
+      renderTrendChart();
+    }
+
     function initSettings() {
       const savedUrl = localStorage.getItem("EXPENSE_API_URL") || DEFAULT_API_URL;
       if (savedUrl) document.getElementById("setting-api-url").value = savedUrl;
@@ -394,6 +428,7 @@
       if (val && !isNaN(val)) {
         localStorage.setItem("USER_MONTHLY_BUDGET", val);
         renderStats();
+        renderTrendChart();
       }
     }
 
@@ -565,8 +600,201 @@
       }
     }
 
-    // 5. 圖表渲染（包含七大分類）
+    // 5. 圖表渲染
     function renderCharts() {
+      renderTrendChart();
+      renderPieChart();
+    }
+
+    // 渲染趨勢圖（支援三合一切換）
+    function renderTrendChart() {
+      const trendCtx = document.getElementById('trendChart').getContext('2d');
+      if (trendChartInstance) trendChartInstance.destroy();
+
+      const titleEl = document.getElementById("trend-title");
+      const subtitleEl = document.getElementById("trend-subtitle");
+      const budgetTarget = Number(localStorage.getItem("USER_MONTHLY_BUDGET") || "15000");
+
+      if (currentTrendMode === 'budget') {
+        // ========== 模式 1：預算 vs 實質支出對比圖 ==========
+        titleEl.textContent = "月度支出與預算對比";
+        subtitleEl.textContent = "墨綠色表示在預算內，紅色表示超支，虛線為每月預算目標";
+
+        const last6Months = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
+        const mTotals = last6Months.map(m => globalTransactions.filter(t => t.month === m).reduce((s, t) => s + t.amount, 0));
+
+        trendChartInstance = new Chart(trendCtx, {
+          type: 'bar',
+          data: {
+            labels: last6Months.map(m => m.split("-")[1] + "月"),
+            datasets: [
+              {
+                label: '每月預算目標',
+                data: last6Months.map(() => budgetTarget),
+                type: 'line',
+                borderColor: '#94A3B8',
+                borderWidth: 2,
+                borderDash: [5, 5],
+                pointRadius: 0,
+                fill: false,
+                order: 1
+              },
+              {
+                label: '實質支出',
+                data: mTotals,
+                backgroundColor: mTotals.map(amt => amt > budgetTarget ? '#F43F5E' : '#0F766E'),
+                borderRadius: 6,
+                order: 2
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: true,
+                position: 'top',
+                labels: { boxWidth: 12, font: { size: 10 } }
+              }
+            },
+            scales: {
+              y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 } } },
+              x: { grid: { display: false }, ticks: { font: { size: 10 } } }
+            }
+          }
+        });
+
+      } else if (currentTrendMode === 'daily') {
+        // ========== 模式 2：當月累積支出走勢圖 (燃盡曲線) ==========
+        titleEl.textContent = `${currentSelectedMonth} 每日累積支出走勢`;
+        subtitleEl.textContent = "綠色實線為實際累積開銷，灰色虛線為理想均勻花費進度";
+
+        let [year, month] = currentSelectedMonth.split("-").map(Number);
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const daysLabels = Array.from({ length: daysInMonth }, (_, i) => `${i + 1}日`);
+
+        // 計算每日實際花費與累積值
+        const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
+        const dailySpend = Array(daysInMonth).fill(0);
+
+        monthData.forEach(t => {
+          let dayNum = 0;
+          if (t.date && t.date.includes('-')) {
+            dayNum = parseInt(t.date.split('-')[2], 10);
+          } else if (t.date && t.date.includes('/')) {
+            dayNum = parseInt(t.date.split('/')[2], 10);
+          }
+          if (dayNum >= 1 && dayNum <= daysInMonth) {
+            dailySpend[dayNum - 1] += t.amount;
+          }
+        });
+
+        // 建立累積數據
+        const cumulativeActual = [];
+        let runningTotal = 0;
+        const now = new Date();
+        const isCurrentMonth = currentSelectedMonth === now.toISOString().substring(0, 7);
+        const limitDay = isCurrentMonth ? now.getDate() : daysInMonth;
+
+        for (let d = 0; d < daysInMonth; d++) {
+          if (d < limitDay) {
+            runningTotal += dailySpend[d];
+            cumulativeActual.push(runningTotal);
+          } else {
+            cumulativeActual.push(null); // 未來天數不繪製實線
+          }
+        }
+
+        // 理想均勻累積線
+        const idealDailyRate = budgetTarget / daysInMonth;
+        const idealPace = Array.from({ length: daysInMonth }, (_, i) => Math.round(idealDailyRate * (i + 1)));
+
+        trendChartInstance = new Chart(trendCtx, {
+          type: 'line',
+          data: {
+            labels: daysLabels,
+            datasets: [
+              {
+                label: '本月實際累積',
+                data: cumulativeActual,
+                borderColor: '#10B981',
+                backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                borderWidth: 2.5,
+                fill: true,
+                tension: 0.2,
+                pointRadius: 2
+              },
+              {
+                label: '理想勻速支出進度',
+                data: idealPace,
+                borderColor: '#CBD5E1',
+                borderWidth: 2,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                fill: false
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: true,
+                position: 'top',
+                labels: { boxWidth: 12, font: { size: 10 } }
+              }
+            },
+            scales: {
+              y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 } } },
+              x: { grid: { display: false }, ticks: { font: { size: 9 }, maxTicksLimit: 15 } }
+            }
+          }
+        });
+
+      } else if (currentTrendMode === 'stacked') {
+        // ========== 模式 3：近半年類別堆疊圖 ==========
+        titleEl.textContent = "近 6 個月支出結構堆疊";
+        subtitleEl.textContent = "分析每月總花費中各類別的組成比重";
+
+        const last6Months = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
+        const cats = ["餐飲", "生活", "家用", "社交", "娛樂", "交通", "雜支"];
+
+        const datasets = cats.map(c => ({
+          label: c,
+          data: last6Months.map(m => globalTransactions.filter(t => t.month === m && t.category === c).reduce((s, t) => s + t.amount, 0)),
+          backgroundColor: CATEGORY_COLORS[c],
+          borderRadius: 4
+        }));
+
+        trendChartInstance = new Chart(trendCtx, {
+          type: 'bar',
+          data: {
+            labels: last6Months.map(m => m.split("-")[1] + "月"),
+            datasets: datasets
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: true,
+                position: 'top',
+                labels: { boxWidth: 10, font: { size: 10 } }
+              }
+            },
+            scales: {
+              x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
+              y: { stacked: true, grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 } } }
+            }
+          }
+        });
+      }
+    }
+
+    // 渲染圓餅圖
+    function renderPieChart() {
       const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
       document.getElementById("pie-month-label").textContent = `${currentSelectedMonth} 佔比`;
 
@@ -624,33 +852,6 @@
               <div class="h-1.5 rounded-full" style="width: ${percent}%; background: ${color}"></div>
             </div>
           </div>`;
-      });
-
-      const last6Months = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
-      const mTotals = last6Months.map(m => globalTransactions.filter(t => t.month === m).reduce((s, t) => s + t.amount, 0));
-
-      const trendCtx = document.getElementById('trendChart').getContext('2d');
-      if (trendChartInstance) trendChartInstance.destroy();
-      trendChartInstance = new Chart(trendCtx, {
-        type: 'bar',
-        data: {
-          labels: last6Months.map(m => m.split("-")[1] + "月"),
-          datasets: [{
-            label: '實質支出',
-            data: mTotals,
-            backgroundColor: '#0F766E',
-            borderRadius: 6
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            y: { grid: { color: '#F1F5F9' }, ticks: { font: { size: 10 } } },
-            x: { grid: { display: false }, ticks: { font: { size: 10 } } }
-          }
-        }
       });
     }
 
