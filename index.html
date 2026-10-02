@@ -186,10 +186,10 @@
                 <span class="text-xs text-emerald-200">NT$</span>
                 <span id="stat-remain-budget" class="text-2xl font-bold">--</span>
               </div>
-              <p id="stat-budget-daily" class="text-xs text-emerald-200/80 mt-1">每日可用額度：計算中</p>
+              <p id="stat-budget-daily" class="text-xs text-emerald-200/80 mt-1">原每日配額計算中...</p>
             </div>
             <div class="mt-3 flex justify-between items-center text-xs">
-              <span id="stat-budget-status" class="bg-emerald-800/60 px-2 py-0.5 rounded text-emerald-200 text-[11px]">支出掌控良好</span>
+              <span id="stat-budget-status" class="bg-emerald-800/60 px-2 py-0.5 rounded text-emerald-200 text-[11px]">進度掌握良好</span>
               <button onclick="setBudgetPrompt()" class="underline hover:text-emerald-100 text-[11px]">設定預算</button>
             </div>
           </div>
@@ -491,7 +491,7 @@
       lucide.createIcons();
     }
 
-    // 4. 指標統計（包含動態預算健康度判斷）
+    // 4. 指標統計（時間進度 vs 實際開銷 動態判定）
     function renderStats() {
       const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
       const total = monthData.reduce((sum, t) => sum + t.amount, 0);
@@ -517,29 +517,62 @@
       const avg = allMonths.length > 0 ? Math.round(sum6 / allMonths.length) : 0;
       document.getElementById("stat-avg").textContent = avg.toLocaleString();
 
-      // 預算與動態狀態
+      // ================== 動態預算與時間維度演算 ==================
       const budget = Number(localStorage.getItem("USER_MONTHLY_BUDGET") || "15000");
       const remain = budget - total;
       document.getElementById("stat-remain-budget").textContent = remain.toLocaleString();
-      
-      const today = new Date();
-      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
-      const remainDays = Math.max(1, daysInMonth - today.getDate());
-      const daily = remain > 0 ? Math.round(remain / remainDays) : 0;
-      document.getElementById("stat-budget-daily").textContent = `剩餘天數：${remainDays} 天 · 日均可用 NT$ ${daily.toLocaleString()}`;
 
-      // 動態更新預算控制狀態文字與顏色樣式
+      // 計算月份天數與時間進度
+      const now = new Date();
+      const currentYearMonth = now.toISOString().substring(0, 7);
+      
+      let [year, month] = currentSelectedMonth.split("-").map(Number);
+      const daysInMonth = new Date(year, month, 0).getDate();
+
+      let passedDays = daysInMonth;
+      let remainDays = 1;
+
+      if (currentSelectedMonth === currentYearMonth) {
+        // 當前月份：按今日天數計算
+        passedDays = now.getDate();
+        remainDays = Math.max(1, daysInMonth - passedDays + 1); // 包含今天剩餘天數
+      } else if (currentSelectedMonth > currentYearMonth) {
+        // 未來月份
+        passedDays = 1;
+        remainDays = daysInMonth;
+      }
+
+      // 1. 原本表定每日預算 vs 預期應花額度
+      const plannedDaily = Math.round(budget / daysInMonth);
+      const expectedSpendToDate = plannedDaily * passedDays;
+
+      // 2. 接下來平均每日可花費配額
+      const dailyAllow = remain > 0 ? Math.round(remain / remainDays) : 0;
+
+      // 更新說明文字：顯示原本預算與接下來每日可用配額
+      const budgetDailyEl = document.getElementById("stat-budget-daily");
+      if (remain > 0) {
+        budgetDailyEl.textContent = `原每日 NT$ ${plannedDaily.toLocaleString()} ➜ 剩餘 ${remainDays} 天，每天可用 NT$ ${dailyAllow.toLocaleString()}`;
+      } else {
+        budgetDailyEl.textContent = `預算已透支 NT$ ${Math.abs(remain).toLocaleString()} · 本月剩餘天數無可用額度`;
+      }
+
+      // 3. 狀態標籤判斷（動態時間進度比對）
       const statusEl = document.getElementById("stat-budget-status");
       if (statusEl) {
-        const remainPercent = (remain / budget) * 100;
         if (remain < 0) {
           statusEl.textContent = "預算已超支";
           statusEl.className = "bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded text-[11px] font-semibold";
-        } else if (remainPercent <= 20) {
-          statusEl.textContent = "預算即將告急";
+        } else if (total > expectedSpendToDate * 1.2) {
+          // 花費超過當前時間預期的 120%（嚴重偏快）
+          statusEl.textContent = "花費嚴重超前";
+          statusEl.className = "bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded text-[11px] font-semibold";
+        } else if (total > expectedSpendToDate * 1.05) {
+          // 花費落在當前時間預期的 105% ~ 120% 之間
+          statusEl.textContent = "花費略微偏快";
           statusEl.className = "bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded text-[11px] font-semibold";
         } else {
-          statusEl.textContent = "支出掌控良好";
+          statusEl.textContent = "進度掌握良好";
           statusEl.className = "bg-emerald-800/60 px-2 py-0.5 rounded text-emerald-200 text-[11px]";
         }
       }
