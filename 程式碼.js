@@ -4,12 +4,13 @@
  * ==============================================================================
  * 
  * 核心功能：
- * 1. 【doPost】支援「文字自然語言」、「拍照/發票/便當/彩券」
- * 2. 【查帳功能】輸入「查詢」或「查帳」列出本月最近 10 筆編號明細
- * 3. 【精準刪除】輸入「刪除」刪除最後一筆；輸入「刪除 3」刪除指定編號
- * 4. 【精準修改】輸入「改 3 金額 150」或「改 3 項目 威力彩」即時更正
- * 5. 【極速回覆】配置 thinkingLevel: "low" 縮短推論時間（1~3秒秒回）
- * 6. 【雙向同步】明細刪修會自動同步更新「月度彙總」工作表金額
+ * 1. 【模式二多品項拆分】拍照自動解析發票/QR Code/點菜單的所有品項，並逐筆獨立入帳
+ * 2. 【doPost】支援「文字自然語言」、「拍照多品項拆分」、「查帳」、「刪修」
+ * 3. 【查帳功能】輸入「查詢」或「查帳」列出本月最近 10 筆編號明細
+ * 4. 【精準刪除】輸入「刪除」刪除最後一筆；輸入「刪除 3」刪除指定編號
+ * 5. 【精準修改】輸入「改 3 金額 150」或「改 3 項目 威力彩」即時更正
+ * 6. 【極速回覆】配置 thinkingLevel: "low" 縮短推論時間（1~3秒秒回）
+ * 7. 【雙向同步】明細增刪修會自動同步更新「月度彙總」工作表金額
  * ==============================================================================
  */
 
@@ -141,9 +142,26 @@ function doPost(e) {
         // 5. 一般文字自然語言記帳
         try {
           const parsedData = callGeminiText(userText);
-          writeToSheet(parsedData.item, parsedData.category, parsedData.amount);
-          const replyMessage = `✅ 記帳成功\n項目：${parsedData.item}\n金額：${parsedData.amount}\n分類：${parsedData.category}`;
-          replyToLine(replyToken, replyMessage);
+          const items = parsedData.items || [];
+          if (items.length === 0 && parsedData.item) {
+            items.push({ item: parsedData.item, amount: parsedData.amount, category: parsedData.category });
+          }
+
+          writeMultipleToSheet(items);
+
+          if (items.length > 1) {
+            let replyMsg = `✅ 記帳成功！（已自動拆分 ${items.length} 筆入帳）\n`;
+            let total = 0;
+            items.forEach(it => {
+              replyMsg += `• ${it.item}：$${it.amount.toLocaleString()} (${it.category})\n`;
+              total += it.amount;
+            });
+            replyMsg += `-------------------\n💰 總計金額：$${total.toLocaleString()} 元`;
+            replyToLine(replyToken, replyMsg);
+          } else {
+            const single = items[0];
+            replyToLine(replyToken, `✅ 記帳成功\n項目：${single.item}\n金額：${single.amount.toLocaleString()} 元\n分類：${single.category}`);
+          }
 
         } catch (err) {
           Logger.log(`❌ 文字記帳失敗: ${err.message}`);
@@ -152,7 +170,7 @@ function doPost(e) {
         }
 
       // ----------------------------------------------------
-      // 情境 B：使用者傳送「拍照 / 發票照片 / 超商便當 / 彩券」
+      // 情境 B：使用者傳送「拍照 / 發票照片 / 超商便當 / 彩券」【模式二多品項拆分】
       // ----------------------------------------------------
       } else if (msgType === 'image') {
         const messageId = event.message.id;
@@ -161,23 +179,47 @@ function doPost(e) {
           // 1. 從 LINE 下載照片轉 Base64
           const imageObj = fetchLineImage(messageId);
 
-          // 2. 呼叫 Gemini Vision 進行多模態辨識
+          // 2. 呼叫 Gemini Vision 進行多模態辨識（支援 QR Code 與發票品項拆分）
           const parsedData = callGeminiVision(imageObj);
 
-          // 3. 寫入 Google 試算表
-          writeToSheet(parsedData.item, parsedData.category, parsedData.amount);
-
-          // 4. 回覆成功訊息（附上品項備註）
-          let replyMessage = `📸 拍照記帳成功！\n項目：${parsedData.item}\n金額：${parsedData.amount}\n分類：${parsedData.category}`;
-          if (parsedData.note) {
-            replyMessage += `\n備註：${parsedData.note}`;
+          let items = parsedData.items || [];
+          if (items.length === 0) {
+            items.push({
+              item: parsedData.store || '消費項目',
+              amount: parsedData.total_amount || 0,
+              category: '生活'
+            });
           }
 
-          replyToLine(replyToken, replyMessage);
+          // 3. 逐筆寫入 Google 試算表（多列拆分）
+          writeMultipleToSheet(items);
+
+          // 4. 回覆成功訊息
+          let totalSum = 0;
+          items.forEach(it => totalSum += (Number(it.amount) || 0));
+
+          if (items.length > 1) {
+            let replyMessage = `📸 拍照記帳成功！（已自動拆分 ${items.length} 筆入帳）\n`;
+            items.forEach(it => {
+              replyMessage += `• ${it.item}：$${Number(it.amount).toLocaleString()} (${it.category})\n`;
+            });
+            replyMessage += `-------------------\n💰 發票總計：$${(parsedData.total_amount || totalSum).toLocaleString()} 元`;
+            if (parsedData.note) {
+              replyMessage += `\n備註：${parsedData.note}`;
+            }
+            replyToLine(replyToken, replyMessage);
+          } else {
+            const single = items[0];
+            let replyMessage = `📸 拍照記帳成功！\n項目：${single.item}\n金額：${Number(single.amount).toLocaleString()} 元\n分類：${single.category}`;
+            if (parsedData.note) {
+              replyMessage += `\n備註：${parsedData.note}`;
+            }
+            replyToLine(replyToken, replyMessage);
+          }
 
         } catch (err) {
           Logger.log(`❌ 拍照記帳失敗: ${err.message}`);
-          const helpMessage = `❓ 抱歉，無法清晰辨識照片中的內容。\n請確保照片清晰、無強烈反光，或改用文字記帳。\n(除錯: ${err.message})`;
+          const helpMessage = `❓ 抱歉，無法清晰辨識照片中的發票或商品內容。\n請確保照片光線充足、字樣或QR Code清晰，或改用文字記帳。\n(除錯: ${err.message})`;
           replyToLine(replyToken, helpMessage);
         }
       }
@@ -227,25 +269,25 @@ function callGeminiText(userText) {
   const now = new Date();
   const todayStr = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd');
 
-  const systemPrompt = `你是一個專業個人記帳助理。請從使用者的自然語言訊息中，精準擷取「項目名稱」、「分類類別」與「消費金額」。
+  const systemPrompt = `你是一個專業個人記帳助理。請從使用者的自然語言訊息中，擷取消費品項與金額，若包含多個品項請自動拆分。
 今天是：${todayStr}。
 
 【七大標準分類規則（必須且僅能從中擇一）】
-1. 「餐飲」：正餐、午餐、便當、超商熟食、全家、7-11、早餐、手搖飲料、點心
-2. 「生活」：食材買菜、水電瓦斯日常必要費用
-3. 「家用」：房租、家具、日用耗材、修繕裝潢、家電器材
+1. 「餐飲」：正餐、午餐、便當、超商熟食、飲料、早餐、點心
+2. 「生活」：食材買菜、全聯、日用耗材、水電瓦斯
+3. 「家用」：房租、家具、修繕裝潢、家電器材
 4. 「社交」：聚餐、請客、送禮、紅白包、朋友分帳
-5. 「娛樂」：彩券、大樂透、威力彩、刮刮樂、電影、遊戲課金、Netflix/Spotify訂閱、旅遊玩樂
-6. 「交通」：捷運、公車、計程車、Uber、高鐵、火車、加油、機車汽車保養、停車費、悠遊卡加值
-7. 「雜支」：看醫生診所掛號費、藥品、無法歸類之臨時支出
-
-【項目名稱原則】
-- 保持使用者輸入的原貌精髓，例如「全家」、「排骨便當」、「搭Uber」、「加油」、「大樂透」。
-- 絕對禁止自行添加「消費」、「支出」、「花費」、「購買」等贅字。
+5. 「娛樂」：彩券、大樂透、威力彩、刮刮樂、電影、遊戲課金、旅遊玩樂
+6. 「交通」：捷運、公車、計程車、Uber、高鐵、火車、加油、停車費
+7. 「雜支」：看病掛號、藥品、無法歸類之臨時支出
 
 【回傳格式】
-嚴格只回傳乾淨的 JSON，禁止任何 Markdown 語法或額外文字說明：
-{"item": "項目名稱", "category": "餐飲|生活|家用|社交|娛樂|交通|雜支", "amount": 數字}`;
+嚴格只回傳乾淨的 JSON：
+{
+  "items": [
+    { "item": "品項名稱", "category": "餐飲|生活|家用|社交|娛樂|交通|雜支", "amount": 數字 }
+  ]
+}`;
 
   const payload = {
     contents: [
@@ -258,9 +300,7 @@ function callGeminiText(userText) {
     ],
     generationConfig: {
       responseMimeType: "application/json",
-      thinkingConfig: {
-        thinkingLevel: "low"
-      },
+      thinkingConfig: { thinkingLevel: "low" },
       temperature: 0.1
     }
   };
@@ -269,40 +309,49 @@ function callGeminiText(userText) {
 }
 
 // ==============================================================================
-// 5. Gemini API 呼叫核心（照片/發票/超商便當/彩券多模態視覺辨識）
+// 5. Gemini API 呼叫核心（照片/發票/QR Code多模態視覺辨識 - 模式二多品項拆分）
 // ==============================================================================
 function callGeminiVision(imageObj) {
   const now = new Date();
   const todayStr = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM-dd');
 
-  const systemPrompt = `你是一個專業個人記帳與視覺辨識助理。
+  const systemPrompt = `你是一個專業個人記帳與電子發票辨識助理。
 今天是：${todayStr}。
-這張照片可能是：
-1. 台灣超商/超市商品（如：便當、微波食品、飲料、麵包的包裝價格標籤）
-2. 統一發票證明聯 / 傳統收據 / 購買明細清單
-3. 台灣公益彩券（如：大樂透、威力彩、今彩539、刮刮樂、運動彩券）
-4. 餐廳點菜單 / 飲料杯貼紙 / 刷卡簽單 / 菜單價目表
 
-【辨識規則】
-1. 「項目名稱 (item)」：
-   - 若為台灣彩券（如大樂透、威力彩）：填寫彩券名稱（例如「大樂透」、「威力彩」）。
-   - 若為超商便當/商品：提取完整品名（例如「經典奮起湖便當」、「抹茶拿鐵」）。
-   - 若為發票/收據：優先填寫商家或品牌名稱（例如「全家」、「7-ELEVEN」、「家樂福」）。
-2. 「消費金額 (amount)」：
-   - 若為彩券：尋找「總金額: NT$數字」或「總計」。
-   - 若為商品包裝/便當：辨識標籤上的「售價」、「價格」或「$金額」，若有打折標籤（如友善食光7折、i珍食65折）請以折扣後實付金額為準。
-   - 若為發票/收據：尋找「總計」、「應付金額」、「實付金額」、「TOTAL」。
-   - 絕對排除發票號碼、彩券選號號碼、期別序號、找零金額。
-   - 只回傳純數字整數。
-3. 「分類類別 (category)」：必須且僅能從以下七大分類中擇一：
-   餐飲 / 生活 / 家用 / 社交 / 娛樂 / 交通 / 雜支
-   (彩券、大樂透、刮刮樂請歸為「娛樂」；便當熟食請歸為「餐飲」)
-4. 「品項備註 (note)」：
-   - 簡短備註（例如：「計1期 2注」或「友善食光7折」），15字以內。
+【辨識目標（模式二：多品項自動拆分）】
+請仔細辨識這張圖片（台灣統一發票證明聯、收據、超商便當、商品標籤、彩券或點菜單）：
+
+1. 若為發票/收據：
+   - 【優先解讀品項細節】：
+     a. 若發票下方印有交易明細清單，請將每一個購買品項分別擷取。
+     b. 若發票沒有印出明細清單，請仔細解讀發票上的「QR Code」內容！台灣電子發票的 QR Code 包含『品名:數量:單價』格式資訊，請將裡面的各項商品與價格解析出來。
+     c. 若 QR Code 與紙面皆無商品細節，則以店家名稱或「超商購物」為品名，金額記錄總結帳金額。
+2. 若為商品標籤/超商便當：
+   - 提取完整品名（例如「奮起湖便當」），若有友善食光7折或i珍食65折等特價貼紙，請以折後金額計算。
+3. 若為台灣彩券（大樂透、威力彩等）：
+   - 品名為彩券名稱（例如「大樂透」），金額為「總金額: NT$數字」，分類一律為「娛樂」。
+
+【七大標準分類（每項必須從中擇一）】
+餐飲 / 生活 / 家用 / 社交 / 娛樂 / 交通 / 雜支
+- 食物飲料、熟食：歸為「餐飲」
+- 買菜食材、家庭日常耗材、超市生鮮：歸為「生活」
+- 家居修繕：歸為「家用」
+- 彩券、遊戲、娛樂休閒：歸為「娛樂」
 
 【回傳格式】
-嚴格只回傳乾淨的 JSON，禁止任何 Markdown 語法或額外文字：
-{"item": "品名或商家", "category": "分類", "amount": 數字, "note": "備註"}`;
+嚴格只回傳乾淨的 JSON，禁止任何額外說明：
+{
+  "store": "店家名稱（如全家、7-11，無則留空）",
+  "total_amount": 發票或消費總金額數字,
+  "items": [
+    {
+      "item": "品名名稱（勿加消費、購買等贅字）",
+      "amount": 數字,
+      "category": "餐飲|生活|家用|社交|娛樂|交通|雜支"
+    }
+  ],
+  "note": "簡短備註（無則留空）"
+}`;
 
   const payload = {
     contents: [
@@ -315,15 +364,13 @@ function callGeminiVision(imageObj) {
               data: imageObj.base64
             }
           },
-          { text: "請辨識這張圖片中的發票、彩券、便當售價或消費單據，精準擷取項目名稱、總金額與分類。" }
+          { text: "請辨識這張發票或商品照片，若有多品項或QR Code明細請自動拆分為個別品項清單輸出。" }
         ]
       }
     ],
     generationConfig: {
       responseMimeType: "application/json",
-      thinkingConfig: {
-        thinkingLevel: "low"
-      },
+      thinkingConfig: { thinkingLevel: "low" },
       temperature: 0.1
     }
   };
@@ -364,26 +411,44 @@ function executeGeminiRequest(payload) {
           const cleanedText = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
           const parsed = JSON.parse(cleanedText);
 
-          if (parsed && parsed.item && parsed.amount != null) {
-            let cat = String(parsed.category || '生活').trim();
-            if (!VALID_CATEGORIES.includes(cat)) {
-              cat = '雜支';
+          // 處理多品項陣列 (items)
+          if (parsed.items && Array.isArray(parsed.items) && parsed.items.length > 0) {
+            const cleanedItems = [];
+            for (const it of parsed.items) {
+              if (it.item && it.amount != null) {
+                let cat = String(it.category || '生活').trim();
+                if (!VALID_CATEGORIES.includes(cat)) cat = '雜支';
+                let cleanItem = String(it.item).trim().replace(/(消費|花費|支出|購買)$/, '').trim();
+                cleanedItems.push({
+                  item: cleanItem || String(it.item).trim(),
+                  category: cat,
+                  amount: Math.abs(Number(it.amount)) || 0
+                });
+              }
             }
 
-            let cleanItem = String(parsed.item).trim()
-              .replace(/(消費|花費|支出|購買)$/, '')
-              .trim();
-            if (!cleanItem) cleanItem = String(parsed.item).trim();
+            if (cleanedItems.length > 0) {
+              parsed.items = cleanedItems;
+              Logger.log(`✅ [${modelId}] 多品項解析成功 (${cleanedItems.length} 項): ${JSON.stringify(parsed)}`);
+              return parsed;
+            }
+          }
 
-            const result = {
-              item: cleanItem,
-              category: cat,
-              amount: Math.abs(Number(parsed.amount)) || 0,
+          // 容錯單品項相容
+          if (parsed && parsed.item && parsed.amount != null) {
+            let cat = String(parsed.category || '生活').trim();
+            if (!VALID_CATEGORIES.includes(cat)) cat = '雜支';
+            let cleanItem = String(parsed.item).trim().replace(/(消費|花費|支出|購買)$/, '').trim();
+            return {
+              store: parsed.store || '',
+              total_amount: Math.abs(Number(parsed.amount)) || 0,
+              items: [{
+                item: cleanItem || String(parsed.item).trim(),
+                category: cat,
+                amount: Math.abs(Number(parsed.amount)) || 0
+              }],
               note: parsed.note ? String(parsed.note).trim() : ''
             };
-
-            Logger.log(`✅ [${modelId}] 解析成功: ${JSON.stringify(result)}`);
-            return result;
           }
         }
       } else {
@@ -454,7 +519,6 @@ function getMonthlyListMessage(userId) {
     const indexNum = idx + 1;
     rowMapping[indexNum] = it.sheetRow;
 
-    // 格式化時間（只取 月/日）
     let datePart = '';
     const dateMatch = it.time.match(/(\d+)\/(\d+)\s/);
     if (dateMatch) {
@@ -495,7 +559,6 @@ function deleteRecordByIndex(indexNum, userId) {
 
   let targetRow = null;
 
-  // 1. 嘗試從快取取得對應行號
   try {
     const cache = CacheService.getScriptCache();
     const cachedStr = cache.get('query_rows_' + userId);
@@ -507,7 +570,6 @@ function deleteRecordByIndex(indexNum, userId) {
     }
   } catch (e) {}
 
-  // 2. 若快取過期，動態重新抓取本月最後 10 筆推算行號
   if (!targetRow) {
     const now = new Date();
     const currentMonth = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM');
@@ -534,15 +596,12 @@ function deleteRecordByIndex(indexNum, userId) {
   const amount = Number(rowValues[3]) || 0;
   const monthStr = String(rowValues[4] || '').trim();
 
-  // 刪除該行
   detailSheet.deleteRow(targetRow);
 
-  // 同步從月度彙總扣除
   if (monthStr && amount > 0) {
     deductMonthlySummary(ss, monthStr, amount);
   }
 
-  // 清除快取讓下次查詢重整
   try {
     CacheService.getScriptCache().remove('query_rows_' + userId);
   } catch (e) {}
@@ -567,7 +626,6 @@ function modifyRecordByIndex(indexNum, modContent, userId) {
 
   let targetRow = null;
 
-  // 1. 嘗試從快取取得行號
   try {
     const cache = CacheService.getScriptCache();
     const cachedStr = cache.get('query_rows_' + userId);
@@ -579,7 +637,6 @@ function modifyRecordByIndex(indexNum, modContent, userId) {
     }
   } catch (e) {}
 
-  // 2. 若無快取，動態計算本月行號
   if (!targetRow) {
     const now = new Date();
     const currentMonth = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM');
@@ -608,8 +665,6 @@ function modifyRecordByIndex(indexNum, modContent, userId) {
 
   let changeLog = [];
 
-  // 判斷修改欄位：
-  // 1. 金額修改（例：金額 150、價格 200、$250、250）
   const amountMatch = modContent.match(/(?:金額|價格|\$)?\s*(\d+)/);
   if (amountMatch && (modContent.includes('金額') || modContent.includes('價格') || modContent.includes('$') || /^\d+$/.test(modContent))) {
     const newAmount = Number(amountMatch[1]);
@@ -622,7 +677,6 @@ function modifyRecordByIndex(indexNum, modContent, userId) {
     currentAmount = newAmount;
   }
 
-  // 2. 項目修改（例：項目 威力彩、品名 大樂透）
   const itemMatch = modContent.match(/(?:項目|品名|名稱)\s*(.+)/);
   if (itemMatch) {
     const newItem = itemMatch[1].trim();
@@ -631,7 +685,6 @@ function modifyRecordByIndex(indexNum, modContent, userId) {
     currentItem = newItem;
   }
 
-  // 3. 分類修改（例：分類 生活）
   const catMatch = modContent.match(/(?:分類|類別)\s*(.+)/);
   if (catMatch) {
     let newCat = catMatch[1].trim();
@@ -658,36 +711,39 @@ function modifyRecordByIndex(indexNum, modContent, userId) {
 }
 
 // ==============================================================================
-// 8. Google 試算表寫入與月度統計更新
+// 8. Google 試算表寫入與月度統計更新（多品項拆分支援）
 // ==============================================================================
-function writeToSheet(item, category, amount) {
+
+/**
+ * 寫入多品項明細並同步累計月度總額
+ */
+function writeMultipleToSheet(items) {
+  if (!items || items.length === 0) return;
+
   const ss = getSpreadsheet();
   const detailSheet = ss.getSheetByName('記帳明細') || ss.getSheets()[0];
-
   const now = new Date();
   const monthStr = Utilities.formatDate(now, 'Asia/Taipei', 'yyyy-MM');
 
-  detailSheet.appendRow([now, item, category, Number(amount), monthStr]);
+  let totalBatch = 0;
 
-  const lastRow = detailSheet.getLastRow();
+  for (const it of items) {
+    let cat = String(it.category || '生活').trim();
+    if (!VALID_CATEGORIES.includes(cat)) cat = '雜支';
+    const amt = Math.abs(Number(it.amount)) || 0;
+    totalBatch += amt;
 
-  // A 欄（時間）：設定格式為「yyyy/M/d 上午/下午 hh:mm:ss」（自動靠右對齊）
-  detailSheet.getRange(lastRow, 1).setNumberFormat("yyyy/M/d am/pm h:mm:ss");
+    detailSheet.appendRow([now, it.item, cat, amt, monthStr]);
+    const lastRow = detailSheet.getLastRow();
 
-  // D 欄（金額）：設定千分位數字格式（自動靠右對齊）
-  detailSheet.getRange(lastRow, 4).setNumberFormat("#,##0");
-
-  // E 欄（月份）：設定純文字並「強制靠右對齊」
-  detailSheet.getRange(lastRow, 5).setNumberFormat("@").setHorizontalAlignment("right");
-
-  // 同步累加至「月度彙總」工作表
-  try {
-    syncMonthlySummary(ss, monthStr, Number(amount));
-  } catch (summaryErr) {
-    Logger.log('⚠️ 同步月度彙總警示: ' + summaryErr.message);
+    detailSheet.getRange(lastRow, 1).setNumberFormat("yyyy/M/d am/pm h:mm:ss");
+    detailSheet.getRange(lastRow, 4).setNumberFormat("#,##0");
+    detailSheet.getRange(lastRow, 5).setNumberFormat("@").setHorizontalAlignment("right");
   }
 
-  return { month: monthStr };
+  if (totalBatch > 0) {
+    syncMonthlySummary(ss, monthStr, totalBatch);
+  }
 }
 
 /**
@@ -708,10 +764,8 @@ function deleteLastRecord() {
   const amount = Number(rowValues[3]) || 0;
   const monthStr = String(rowValues[4] || '').trim();
 
-  // 1. 刪除記帳明細最後一列
   detailSheet.deleteRow(lastRow);
 
-  // 2. 同步從「月度彙總」扣回金額
   if (monthStr && amount > 0) {
     deductMonthlySummary(ss, monthStr, amount);
   }
