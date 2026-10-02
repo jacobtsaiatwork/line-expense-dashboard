@@ -23,35 +23,60 @@
       background: #e2e8f0;
       border-radius: 4px;
     }
-    /* 側邊欄縮小收合狀態 */
-    #sidebar.collapsed {
-      width: 5rem !important; /* 80px */
+    /* 側邊欄縮小收合狀態 (桌面端) */
+    @media (min-width: 768px) {
+      #sidebar.collapsed {
+        width: 3.75rem !important; /* 60px 精簡圖示欄 */
+      }
+      #sidebar.collapsed .sidebar-text,
+      #sidebar.collapsed .sidebar-header-text,
+      #sidebar.collapsed .sidebar-footer-text,
+      #sidebar.collapsed .sidebar-category-title {
+        display: none !important;
+      }
+      #sidebar.collapsed .nav-item {
+        justify-content: center !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+      }
+      #sidebar.collapsed .sidebar-footer {
+        padding: 0.5rem !important;
+        display: flex;
+        justify-content: center;
+      }
     }
-    #sidebar.collapsed .sidebar-text,
-    #sidebar.collapsed .sidebar-header-text,
-    #sidebar.collapsed .sidebar-footer-text,
-    #sidebar.collapsed .sidebar-category-title {
-      display: none !important;
-    }
-    #sidebar.collapsed .nav-item {
-      justify-content: center !important;
-      padding-left: 0 !important;
-      padding-right: 0 !important;
-    }
-    #sidebar.collapsed .sidebar-footer {
-      padding: 0.75rem !important;
-      display: flex;
-      justify-content: center;
+
+    /* 行動裝置 (< 768px)：抽屜式 Off-canvas Drawer，平時完全隱藏 (0 寬度佔比) */
+    @media (max-width: 767px) {
+      #sidebar {
+        position: fixed !important;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 50;
+        width: 17rem !important;
+        max-width: 82vw;
+        height: 100vh !important;
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+      }
+      #sidebar.mobile-open {
+        transform: translateX(0) !important;
+      }
     }
   </style>
 </head>
-<body class="bg-[#F8FAFC] text-slate-800 flex min-h-screen">
+<body class="bg-[#F8FAFC] text-slate-800 flex min-h-screen relative overflow-x-hidden">
+
+  <!-- 手機版側邊欄背景遮罩 (Backdrop) -->
+  <div id="sidebar-backdrop" onclick="closeMobileSidebar()" class="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40 transition-opacity duration-300 opacity-0 pointer-events-none md:hidden"></div>
 
   <!-- 1. 左側導覽側邊欄 (Sidebar) -->
   <aside id="sidebar" class="w-64 bg-[#111315] text-slate-300 flex flex-col justify-between flex-shrink-0 min-h-screen transition-all duration-300 ease-in-out">
     <div>
       <!-- 品牌 Logo & 收合按鈕 -->
-      <div class="p-6 flex items-center justify-between">
+      <div class="p-5 sm:p-6 flex items-center justify-between">
         <div class="flex items-center gap-3 overflow-hidden">
           <div class="w-10 h-10 rounded-xl bg-amber-400/20 text-amber-400 flex items-center justify-center font-bold text-xl border border-amber-400/30 flex-shrink-0">
             記
@@ -64,9 +89,13 @@
             <p class="text-xs text-slate-500">個人財務智慧管理</p>
           </div>
         </div>
-        <!-- 側邊欄切換按鈕 -->
-        <button onclick="toggleSidebar()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors" title="收合/展開選單">
+        <!-- 桌面版收合/展開按鈕 -->
+        <button onclick="toggleSidebar()" class="hidden md:flex text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors" title="收合/展開選單">
           <i id="sidebar-toggle-icon" data-lucide="panel-left-close" class="w-4 h-4"></i>
+        </button>
+        <!-- 手機版關閉抽屜按鈕 -->
+        <button onclick="closeMobileSidebar()" class="md:hidden text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors" title="關閉選單">
+          <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
 
@@ -107,30 +136,34 @@
   <!-- 2. 主要工作區 (Main Content) -->
   <main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
     <!-- 頂部列 (Header) -->
-    <header class="bg-white border-b border-slate-200/80 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
-      <div class="flex items-center gap-3">
+    <header class="bg-white border-b border-slate-200/80 px-4 sm:px-6 md:px-8 py-3 sm:py-4 flex items-center justify-between sticky top-0 z-10">
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- 手機版選單漢堡鈕 -->
+        <button onclick="toggleMobileSidebar()" class="md:hidden p-2 -ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors" title="開啟選單">
+          <i data-lucide="menu" class="w-5 h-5"></i>
+        </button>
         <div>
-          <h1 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <h1 class="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-1.5 sm:gap-2">
             <span id="greeting-text">早安</span>，窮逼 👋
           </h1>
-          <p class="text-xs text-slate-500 mt-0.5">今天是管理財務的好日子 · 清楚掌握收支動向</p>
+          <p class="text-xs text-slate-500 mt-0.5 hidden sm:block">今天是管理財務的好日子 · 清楚掌握收支動向</p>
         </div>
       </div>
 
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 sm:gap-3">
         <!-- 月份切換下拉選單 -->
-        <select id="month-selector" onchange="changeMonth(this.value)" class="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500">
+        <select id="month-selector" onchange="changeMonth(this.value)" class="text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500">
           <!-- 動態載入 -->
         </select>
         <!-- 重新整理按鈕 -->
-        <button onclick="fetchData()" class="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+        <button onclick="fetchData()" class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
           <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
-          同步
+          <span class="hidden sm:inline">同步</span>
         </button>
       </div>
     </header>
 
-    <div class="p-8 space-y-6">
+    <div class="p-4 sm:p-6 md:p-8 space-y-6">
 
       <!-- ================= 視圖 A：總覽儀表板 (Dashboard) ================= -->
       <div id="view-dashboard" class="space-y-6">
@@ -323,7 +356,7 @@
   </main>
 
   <!-- 雲端設定 Modal -->
-  <div id="api-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+  <div id="api-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
       <h3 class="text-base font-bold text-slate-900">雲端連線設定</h3>
       <div>
@@ -365,12 +398,45 @@
       lucide.createIcons();
       updateDynamicGreeting();
       initSettings();
-      if (localStorage.getItem("SIDEBAR_COLLAPSED") === "true") {
+      // 桌面端才套用上次記住的收合狀態；手機端預設完全隱藏 (0 寬度佔比)
+      if (window.innerWidth >= 768 && localStorage.getItem("SIDEBAR_COLLAPSED") === "true") {
         document.getElementById("sidebar").classList.add("collapsed");
         updateSidebarToggleIcon(true);
       }
       fetchData();
     });
+
+    // 手機端抽屜式側邊欄控制
+    function openMobileSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      const backdrop = document.getElementById("sidebar-backdrop");
+      if (sidebar && backdrop) {
+        sidebar.classList.add("mobile-open");
+        backdrop.classList.remove("opacity-0", "pointer-events-none");
+        backdrop.classList.add("opacity-100", "pointer-events-auto");
+        document.body.classList.add("overflow-hidden");
+      }
+    }
+
+    function closeMobileSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      const backdrop = document.getElementById("sidebar-backdrop");
+      if (sidebar && backdrop) {
+        sidebar.classList.remove("mobile-open");
+        backdrop.classList.add("opacity-0", "pointer-events-none");
+        backdrop.classList.remove("opacity-100", "pointer-events-auto");
+        document.body.classList.remove("overflow-hidden");
+      }
+    }
+
+    function toggleMobileSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      if (sidebar && sidebar.classList.contains("mobile-open")) {
+        closeMobileSidebar();
+      } else {
+        openMobileSidebar();
+      }
+    }
 
     // 動態時段問候語判定
     function updateDynamicGreeting() {
@@ -387,7 +453,7 @@
       if (el) el.textContent = greeting;
     }
 
-    // 側邊欄縮小/展開切換函式
+    // 側邊欄縮小/展開切換函式 (桌面端)
     function toggleSidebar() {
       const sidebar = document.getElementById("sidebar");
       const isCollapsed = sidebar.classList.toggle("collapsed");
@@ -397,12 +463,14 @@
 
     function updateSidebarToggleIcon(isCollapsed) {
       const icon = document.getElementById("sidebar-toggle-icon");
-      if (isCollapsed) {
-        icon.setAttribute("data-lucide", "panel-left-open");
-      } else {
-        icon.setAttribute("data-lucide", "panel-left-close");
+      if (icon) {
+        if (isCollapsed) {
+          icon.setAttribute("data-lucide", "panel-left-open");
+        } else {
+          icon.setAttribute("data-lucide", "panel-left-close");
+        }
+        lucide.createIcons();
       }
-      lucide.createIcons();
     }
 
     // 趨勢圖模式切換控制
@@ -428,7 +496,10 @@
       if (savedUrl) document.getElementById("setting-api-url").value = savedUrl;
     }
 
-    function openApiModal() { document.getElementById("api-modal").classList.remove("hidden"); }
+    function openApiModal() {
+      closeMobileSidebar();
+      document.getElementById("api-modal").classList.remove("hidden");
+    }
     function closeApiModal() { document.getElementById("api-modal").classList.add("hidden"); }
     function saveApiSettings() {
       const url = document.getElementById("setting-api-url").value.trim();
@@ -951,6 +1022,7 @@
     }
 
     function switchTab(tab) {
+      closeMobileSidebar();
       if (tab === 'dashboard') {
         document.getElementById("view-dashboard").classList.remove("hidden");
         document.getElementById("view-analysis").classList.add("hidden");
