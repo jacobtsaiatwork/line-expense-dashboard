@@ -374,6 +374,17 @@
     // 預設後端配置（固定寫死，無須任何 Token 鑑權）
     const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwWTmYYpFKwTeKFXD-qRu-PEbVffM-D1iIRWg4bX-GZUdCC23eOv7umQCvl-LiBBqyi/exec";
 
+    // 預設每月預算上限 (NT$) - 可直接在程式碼中修改預設值
+    const DEFAULT_MONTHLY_BUDGET = 15000;
+
+    function getMonthlyBudget() {
+      const stored = localStorage.getItem("USER_MONTHLY_BUDGET");
+      if (stored && !isNaN(Number(stored)) && Number(stored) > 0) {
+        return Number(stored);
+      }
+      return DEFAULT_MONTHLY_BUDGET;
+    }
+
     // 1. 七大分類專用顏色配對表（含交通）
     const CATEGORY_COLORS = {
       "餐飲": "#F59E0B", // 琥珀橙
@@ -508,13 +519,22 @@
       fetchData();
     }
 
-    function setBudgetPrompt() {
-      const current = localStorage.getItem("USER_MONTHLY_BUDGET") || "15000";
+    async function setBudgetPrompt() {
+      const current = getMonthlyBudget();
       const val = prompt("請輸入每月預算上限 (NT$):", current);
-      if (val && !isNaN(val)) {
-        localStorage.setItem("USER_MONTHLY_BUDGET", val);
+      if (val && !isNaN(val) && Number(val) > 0) {
+        const num = Number(val);
+        localStorage.setItem("USER_MONTHLY_BUDGET", String(num));
         renderStats();
         renderTrendChart();
+
+        // 同步寫入雲端 Google Apps Script，跨裝置與跨瀏覽器永久儲存
+        const apiUrl = localStorage.getItem("EXPENSE_API_URL") || DEFAULT_API_URL;
+        try {
+          await fetch(`${apiUrl}?action=setBudget&budget=${num}`, { redirect: "follow" });
+        } catch (e) {
+          console.warn("雲端預算同步失敗:", e);
+        }
       }
     }
 
@@ -526,6 +546,11 @@
       try {
         const res = await fetch(apiUrl, { redirect: "follow" });
         const json = await res.json();
+
+        // 若雲端回傳已設定的每月預算，自動同步更新
+        if (json.budget && !isNaN(Number(json.budget)) && Number(json.budget) > 0) {
+          localStorage.setItem("USER_MONTHLY_BUDGET", String(json.budget));
+        }
 
         let rawRows = [];
         if (json.details && Array.isArray(json.details)) {
@@ -637,7 +662,7 @@
       const avg = allMonths.length > 0 ? Math.round(sum6 / allMonths.length) : 0;
       document.getElementById("stat-avg").textContent = avg.toLocaleString();
 
-      const budget = Number(localStorage.getItem("USER_MONTHLY_BUDGET") || "15000");
+      const budget = getMonthlyBudget();
       const remain = budget - total;
       document.getElementById("stat-remain-budget").textContent = remain.toLocaleString();
 
@@ -699,7 +724,7 @@
 
       const titleEl = document.getElementById("trend-title");
       const subtitleEl = document.getElementById("trend-subtitle");
-      const budgetTarget = Number(localStorage.getItem("USER_MONTHLY_BUDGET") || "15000");
+      const budgetTarget = getMonthlyBudget();
 
       if (currentTrendMode === 'budget') {
         titleEl.textContent = "月度支出與預算對比";

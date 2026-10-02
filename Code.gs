@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ==============================================================================
  * 🤖 個人財務助理 LINE Bot + Google Sheets + 儀表板 API (Code.gs)
  * ==============================================================================
@@ -137,6 +137,17 @@ function doPost(e) {
           const modRes = modifyRecordByIndex(indexNum, modContent, userId);
           replyToLine(replyToken, modRes.message);
           continue;
+        }
+
+        // 5. 設定每月預算指令（例如：「設定預算 20000」、「預算 20000」、「修改預算 25000」）
+        const budgetMatch = userText.match(/^(?:設定預算|修改預算|預算)\s*(\d+)$/i);
+        if (budgetMatch) {
+          const newBudget = parseInt(budgetMatch[1], 10);
+          if (!isNaN(newBudget) && newBudget > 0) {
+            PropertiesService.getScriptProperties().setProperty('MONTHLY_BUDGET', String(newBudget));
+            replyToLine(replyToken, `💰 每月預算已成功更新為：NT$ ${newBudget.toLocaleString()} 元！\n雲端儀表板與剩餘額度已即時同步更新。`);
+            continue;
+          }
         }
 
         // 5. 一般文字自然語言記帳
@@ -869,6 +880,19 @@ function replyToLine(replyToken, messageText) {
 // ==============================================================================
 function doGet(e) {
   try {
+    // 支援從前端直接更新預算至雲端 (action=setBudget&budget=...)
+    if (e && e.parameter && e.parameter.action === 'setBudget' && e.parameter.budget) {
+      const newBudget = parseInt(e.parameter.budget, 10);
+      if (!isNaN(newBudget) && newBudget > 0) {
+        PropertiesService.getScriptProperties().setProperty('MONTHLY_BUDGET', String(newBudget));
+        return ContentService.createTextOutput(JSON.stringify({
+          status: 'success',
+          message: '每月預算已更新至雲端',
+          budget: newBudget
+        })).setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
     const ss = getSpreadsheet();
 
     // 1. 讀取「記帳明細」
@@ -879,8 +903,12 @@ function doGet(e) {
     const summarySheet = ss.getSheetByName('月度彙總');
     const summary = summarySheet ? summarySheet.getDataRange().getDisplayValues() : [];
 
+    // 3. 讀取雲端已儲存的每月預算
+    const savedBudget = Number(PropertiesService.getScriptProperties().getProperty('MONTHLY_BUDGET')) || 15000;
+
     const result = {
       status: 'success',
+      budget: savedBudget,
       details: details,
       summary: summary,
       updatedAt: Utilities.formatDate(new Date(), 'Asia/Taipei', "yyyy-MM-dd'T'HH:mm:ssXXX")
