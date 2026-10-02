@@ -239,15 +239,16 @@
               <!-- 篩選器 -->
               <div class="flex gap-2">
                 <input type="text" id="search-input" onkeyup="filterTransactions()" placeholder="搜尋項目或金額..." class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500 w-36">
-                <select id="cat-filter" onchange="filterTransactions()" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none text-slate-600">
-                  <option value="ALL">全部類別</option>
-                  <option value="餐飲">餐飲</option>
-                  <option value="生活">生活</option>
-                  <option value="家用">家用</option>
-                  <option value="社交">社交</option>
-                  <option value="娛樂">娛樂</option>
-                  <option value="雜支">雜支</option>
-                </select>
+<select id="cat-filter" onchange="filterTransactions()" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 outline-none text-slate-600">
+  <option value="ALL">全部類別</option>
+  <option value="餐飲">餐飲</option>
+  <option value="生活">生活</option>
+  <option value="家用">家用</option>
+  <option value="社交">社交</option>
+  <option value="娛樂">娛樂</option>
+  <option value="交通">交通</option>
+  <option value="雜支">雜支</option>
+</select>
               </div>
             </div>
 
@@ -328,15 +329,16 @@
     // 預設後端配置（固定寫死，無須任何 Token 鑑權）
     const DEFAULT_API_URL = "https://script.google.com/macros/s/AKfycbwWTmYYpFKwTeKFXD-qRu-PEbVffM-D1iIRWg4bX-GZUdCC23eOv7umQCvl-LiBBqyi/exec";
 
-    // 1. 六大分類專用顏色配對表
-    const CATEGORY_COLORS = {
-      "餐飲": "#F59E0B", // 琥珀橙
-      "生活": "#10B981", // 翡翠綠
-      "家用": "#3B82F6", // 經典藍
-      "社交": "#EC4899", // 玫瑰粉
-      "娛樂": "#8B5CF6", // 典雅紫
-      "雜支": "#64748B"  // 質感灰
-    };
+    // 1. 七大分類專用顏色配對表
+const CATEGORY_COLORS = {
+  "餐飲": "#F59E0B", // 琥珀橙
+  "生活": "#10B981", // 翡翠綠
+  "家用": "#3B82F6", // 經典藍
+  "社交": "#EC4899", // 玫瑰粉
+  "娛樂": "#8B5CF6", // 典雅紫
+  "交通": "#06B6D4", // 蔚藍青
+  "雜支": "#64748B"  // 質感灰
+};
 
     let globalTransactions = [];
     let currentSelectedMonth = "";
@@ -583,9 +585,9 @@
       const monthData = globalTransactions.filter(t => t.month === currentSelectedMonth);
       document.getElementById("pie-month-label").textContent = `${currentSelectedMonth} 佔比`;
 
-      const catTotals = { "餐飲": 0, "生活": 0, "家用": 0, "社交": 0, "娛樂": 0, "雜支": 0 };
+const catTotals = { "餐飲": 0, "生活": 0, "家用": 0, "社交": 0, "娛樂": 0, "交通": 0, "雜支": 0 };
       monthData.forEach(t => {
-        if (catTotals[t.category] !== undefined) catTotals[t.category] += t.amount;
+        if (catTotals[t.categ     consory] !== undefined) catTotals[t.category] += t.amount;
         else catTotals["雜支"] += t.amount;
       });
 
@@ -719,7 +721,7 @@
     // 7. 分析分頁
     function renderAnalysisView() {
       const allMonths = Array.from(new Set(globalTransactions.map(t => t.month))).sort().slice(-6);
-      const cats = ["餐飲", "生活", "家用", "社交", "娛樂", "雜支"];
+const cats = ["餐飲", "生活", "家用", "社交", "娛樂", "交通", "雜支"];
       
       const datasets = cats.map(c => ({
         label: c,
