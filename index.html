@@ -125,11 +125,11 @@
 
     <!-- 底部狀態 -->
     <div class="sidebar-footer p-4 border-t border-slate-800/80 m-4 rounded-xl bg-slate-900/50">
-      <div class="flex items-center gap-2 text-xs text-emerald-400 mb-1">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
+      <div id="conn-status-container" class="flex items-center gap-2 text-xs text-emerald-400 mb-1">
+        <span id="conn-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
         <span id="conn-status" class="sidebar-footer-text whitespace-nowrap">API 連線正常</span>
       </div>
-      <p class="sidebar-footer-text text-[11px] text-slate-500 whitespace-nowrap">雲端試算表即時連動中</p>
+      <p id="conn-subtext" class="sidebar-footer-text text-[11px] text-slate-500 whitespace-nowrap">雲端試算表即時連動中</p>
     </div>
   </aside>
 
@@ -164,6 +164,27 @@
     </header>
 
     <div class="p-4 sm:p-6 md:p-8 space-y-6">
+
+      <!-- 雲端同步失敗警示條 -->
+      <div id="sync-error-banner" class="hidden p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+        <div class="flex items-start gap-2.5">
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5"></i>
+          <div>
+            <span class="font-semibold text-rose-900">雲端資料同步中斷：</span>
+            <span id="sync-error-msg" class="text-rose-700">無法連線至 Google 試算表 API</span>
+            <p id="sync-error-url" class="text-[11px] text-rose-500 font-mono mt-0.5 truncate max-w-lg"></p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+          <button onclick="resetToDefaultApi()" class="px-3 py-1.5 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors shadow-sm flex items-center gap-1.5">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+            一鍵還原官方預設
+          </button>
+          <button onclick="fetchData()" class="px-3 py-1.5 text-xs font-medium bg-white hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition-colors">
+            重試連線
+          </button>
+        </div>
+      </div>
 
       <!-- ================= 視圖 A：總覽儀表板 (Dashboard) ================= -->
       <div id="view-dashboard" class="space-y-6">
@@ -358,14 +379,24 @@
   <!-- 雲端設定 Modal -->
   <div id="api-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
     <div class="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-      <h3 class="text-base font-bold text-slate-900">雲端連線設定</h3>
-      <div>
-        <label class="text-xs text-slate-500">Google Apps Script Web App URL</label>
-        <input type="text" id="setting-api-url" class="w-full text-xs border border-slate-200 rounded-lg p-2.5 mt-1 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="https://script.google.com/macros/s/.../exec">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-slate-900">雲端連線設定</h3>
+        <span class="text-[11px] bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-semibold border border-emerald-200">line-expense-dashboard</span>
       </div>
-      <div class="flex justify-end gap-2 pt-2">
-        <button onclick="closeApiModal()" class="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
-        <button onclick="saveApiSettings()" class="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">儲存並重新整理</button>
+      <div>
+        <label class="text-xs text-slate-500 font-medium">Google Apps Script Web App URL</label>
+        <input type="text" id="setting-api-url" class="w-full text-xs font-mono border border-slate-200 rounded-lg p-2.5 mt-1 outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700" placeholder="https://script.google.com/macros/s/.../exec">
+        <p class="text-[11px] text-slate-400 mt-1">若連線異常或想改回本帳號預設資料，可隨時點擊下方「還原官方預設」。</p>
+      </div>
+      <div class="flex items-center justify-between pt-2">
+        <button onclick="resetToDefaultApi()" class="px-3 py-2 text-xs font-medium text-amber-600 hover:text-amber-700 hover:bg-amber-50 rounded-lg transition-colors flex items-center gap-1">
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+          還原官方預設
+        </button>
+        <div class="flex gap-2">
+          <button onclick="closeApiModal()" class="px-3.5 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">取消</button>
+          <button onclick="saveApiSettings()" class="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-sm">儲存並同步</button>
+        </div>
       </div>
     </div>
   </div>
@@ -504,19 +535,90 @@
 
     function initSettings() {
       const savedUrl = localStorage.getItem("EXPENSE_API_URL") || DEFAULT_API_URL;
-      if (savedUrl) document.getElementById("setting-api-url").value = savedUrl;
+      const input = document.getElementById("setting-api-url");
+      if (input) input.value = savedUrl;
     }
 
     function openApiModal() {
       closeMobileSidebar();
+      initSettings();
       document.getElementById("api-modal").classList.remove("hidden");
     }
-    function closeApiModal() { document.getElementById("api-modal").classList.add("hidden"); }
-    function saveApiSettings() {
-      const url = document.getElementById("setting-api-url").value.trim();
-      localStorage.setItem("EXPENSE_API_URL", url);
+
+    function closeApiModal() {
+      document.getElementById("api-modal").classList.add("hidden");
+    }
+
+    function resetToDefaultApi() {
+      localStorage.removeItem("EXPENSE_API_URL");
+      const input = document.getElementById("setting-api-url");
+      if (input) input.value = DEFAULT_API_URL;
       closeApiModal();
+      hideSyncErrorBanner();
       fetchData();
+    }
+
+    function saveApiSettings() {
+      let url = (document.getElementById("setting-api-url").value || "").trim();
+      // 自動校正常見輸入錯誤
+      if (url.startsWith("AKfycb")) {
+        url = `https://script.google.com/macros/s/${url}/exec`;
+      } else if (url.includes("script.google.com/macros/s/") && !url.endsWith("/exec")) {
+        url = url.replace(/\/+$/, "") + "/exec";
+      }
+
+      if (url === DEFAULT_API_URL || !url) {
+        localStorage.removeItem("EXPENSE_API_URL");
+      } else {
+        localStorage.setItem("EXPENSE_API_URL", url);
+      }
+      closeApiModal();
+      hideSyncErrorBanner();
+      fetchData();
+    }
+
+    function setConnectionStatus(type, text, subtext) {
+      const container = document.getElementById("conn-status-container");
+      const dot = document.getElementById("conn-dot");
+      const textEl = document.getElementById("conn-status");
+      const subtextEl = document.getElementById("conn-subtext");
+
+      if (textEl) textEl.textContent = text;
+      if (subtext && subtextEl) subtextEl.textContent = subtext;
+
+      if (!container || !dot) return;
+
+      container.className = "flex items-center gap-2 text-xs mb-1";
+      dot.className = "w-2 h-2 rounded-full animate-pulse flex-shrink-0";
+
+      if (type === 'success') {
+        container.classList.add("text-emerald-400");
+        dot.classList.add("bg-emerald-400");
+        if (subtextEl) subtextEl.textContent = "雲端試算表即時連動中";
+      } else if (type === 'connecting') {
+        container.classList.add("text-amber-400");
+        dot.classList.add("bg-amber-400");
+        if (subtextEl) subtextEl.textContent = "正在向 Google 請求最新數據...";
+      } else {
+        container.classList.add("text-rose-400");
+        dot.classList.add("bg-rose-400");
+        if (subtextEl) subtextEl.textContent = "連線失敗，請檢查 API 網址";
+      }
+    }
+
+    function showSyncErrorBanner(msg, url) {
+      const banner = document.getElementById("sync-error-banner");
+      const msgEl = document.getElementById("sync-error-msg");
+      const urlEl = document.getElementById("sync-error-url");
+      if (banner) banner.classList.remove("hidden");
+      if (msgEl) msgEl.textContent = msg;
+      if (urlEl) urlEl.textContent = `請求網址: ${url || DEFAULT_API_URL}`;
+      lucide.createIcons();
+    }
+
+    function hideSyncErrorBanner() {
+      const banner = document.getElementById("sync-error-banner");
+      if (banner) banner.classList.add("hidden");
     }
 
     async function setBudgetPrompt() {
@@ -538,68 +640,108 @@
       }
     }
 
-    // 2. 資料獲取核心（免 Token 直接請求）
+    // 2. 資料獲取核心（免 Token 直接請求，具備自訂失敗自動回退機制）
     async function fetchData() {
-      const apiUrl = localStorage.getItem("EXPENSE_API_URL") || DEFAULT_API_URL;
+      let customUrl = (localStorage.getItem("EXPENSE_API_URL") || "").trim();
+      let apiUrl = customUrl || DEFAULT_API_URL;
 
-      document.getElementById("conn-status").textContent = "同步中...";
+      // 自動修正格式
+      if (apiUrl.startsWith("AKfycb")) {
+        apiUrl = `https://script.google.com/macros/s/${apiUrl}/exec`;
+      } else if (apiUrl.includes("script.google.com/macros/s/") && !apiUrl.endsWith("/exec")) {
+        apiUrl = apiUrl.replace(/\/+$/, "") + "/exec";
+      }
+
+      setConnectionStatus("connecting", "同步中...");
+
+      let json = null;
+      let usedUrl = apiUrl;
+      let caughtError = null;
+
       try {
         const res = await fetch(apiUrl, { redirect: "follow" });
-        const json = await res.json();
-
-        // 若雲端回傳已設定的每月預算，自動同步更新
-        if (json.budget && !isNaN(Number(json.budget)) && Number(json.budget) > 0) {
-          localStorage.setItem("USER_MONTHLY_BUDGET", String(json.budget));
-        }
-
-        let rawRows = [];
-        if (json.details && Array.isArray(json.details)) {
-          rawRows = json.details.slice(1);
-        } else if (Array.isArray(json.data)) {
-          rawRows = json.data;
-        } else if (Array.isArray(json)) {
-          rawRows = json;
-        }
-
-        globalTransactions = rawRows.map(row => {
-          if (Array.isArray(row)) {
-            let dRaw = String(row[0] || '');
-            let monthRaw = String(row[4] || '');
-            let dateFormatted = dRaw;
-
-            if (monthRaw && monthRaw.includes('-')) {
-              dateFormatted = dRaw.includes(' ') ? dRaw.split(' ')[0] : dRaw;
-            }
-
-            const cleanAmt = String(row[3] || '0').replace(/,/g, '');
-            return {
-              date: dateFormatted || monthRaw,
-              month: monthRaw || (dateFormatted.substring(0, 7)),
-              item: String(row[1] || '未命名'),
-              category: String(row[2] || '雜支').trim(),
-              amount: Math.abs(Number(cleanAmt)) || 0
-            };
-          } else {
-            return {
-              date: String(row.date || '').split('T')[0],
-              month: String(row.month || (row.date || '').substring(0, 7)),
-              item: String(row.item || '未命名'),
-              category: String(row.category || '雜支').trim(),
-              amount: Math.abs(Number(row.amount)) || 0
-            };
-          }
-        }).filter(t => t.item && t.amount > 0);
-
-        document.getElementById("conn-status").textContent = "API 連線正常";
-        document.getElementById("conn-status").classList.replace("text-amber-400", "text-emerald-400");
-
-        populateMonthSelector();
-        updateAllViews();
+        if (!res.ok) throw new Error(`HTTP 錯誤狀態碼 ${res.status}`);
+        json = await res.json();
       } catch (err) {
-        console.error("資料載入失敗:", err);
-        document.getElementById("conn-status").textContent = "API 連線異常";
-        document.getElementById("conn-status").classList.replace("text-emerald-400", "text-rose-400");
+        caughtError = err;
+        console.warn("API 請求異常:", apiUrl, err);
+
+        // 如果使用的是自訂網址且失敗，自動回退嘗試官方預設 API 網址！
+        if (customUrl && customUrl !== DEFAULT_API_URL) {
+          console.warn("自訂 API 失敗，正在自動回退官方預設 API 嘗試連線...");
+          try {
+            const fallbackRes = await fetch(DEFAULT_API_URL, { redirect: "follow" });
+            if (fallbackRes.ok) {
+              json = await fallbackRes.json();
+              usedUrl = DEFAULT_API_URL;
+              // 回退成功，自動清掉失效的自訂網址，讓後續不再報錯！
+              localStorage.removeItem("EXPENSE_API_URL");
+              console.log("回退官方 API 成功！已自動恢復預設");
+            }
+          } catch (fallbackErr) {
+            console.error("預設官方 API 亦失敗:", fallbackErr);
+          }
+        }
       }
+
+      if (!json || json.status === "error") {
+        const errorDetail = json?.message || caughtError?.message || "無法連線至 Google 伺服器";
+        console.error("資料載入失敗:", errorDetail);
+        setConnectionStatus("error", "API 連線異常");
+        showSyncErrorBanner(errorDetail, usedUrl);
+        return;
+      }
+
+      hideSyncErrorBanner();
+      setConnectionStatus("success", "API 連線正常");
+
+      // 若雲端回傳已設定的每月預算，自動同步更新
+      if (json.budget && !isNaN(Number(json.budget)) && Number(json.budget) > 0) {
+        localStorage.setItem("USER_MONTHLY_BUDGET", String(json.budget));
+      }
+
+      let rawRows = [];
+      if (json.details && Array.isArray(json.details)) {
+        const firstRow = json.details[0] || [];
+        const isHeader = String(firstRow[0]).includes("時間") || String(firstRow[1]).includes("項目");
+        rawRows = isHeader ? json.details.slice(1) : json.details;
+      } else if (Array.isArray(json.data)) {
+        rawRows = json.data;
+      } else if (Array.isArray(json)) {
+        rawRows = json;
+      }
+
+      globalTransactions = rawRows.map(row => {
+        if (Array.isArray(row)) {
+          let dRaw = String(row[0] || '');
+          let monthRaw = String(row[4] || '');
+          let dateFormatted = dRaw;
+
+          if (monthRaw && monthRaw.includes('-')) {
+            dateFormatted = dRaw.includes(' ') ? dRaw.split(' ')[0] : dRaw;
+          }
+
+          const cleanAmt = String(row[3] || '0').replace(/,/g, '');
+          return {
+            date: dateFormatted || monthRaw,
+            month: monthRaw || (dateFormatted.substring(0, 7)),
+            item: String(row[1] || '未命名'),
+            category: String(row[2] || '雜支').trim(),
+            amount: Math.abs(Number(cleanAmt)) || 0
+          };
+        } else {
+          return {
+            date: String(row.date || '').split('T')[0],
+            month: String(row.month || (row.date || '').substring(0, 7)),
+            item: String(row.item || '未命名'),
+            category: String(row.category || '雜支').trim(),
+            amount: Math.abs(Number(row.amount)) || 0
+          };
+        }
+      }).filter(t => t.item && t.amount > 0);
+
+      populateMonthSelector();
+      updateAllViews();
     }
 
     // 3. 填充月份下拉選單
